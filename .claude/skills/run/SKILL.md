@@ -23,8 +23,8 @@ This is a Next.js 14 App Router app (see [CLAUDE.md](../../../CLAUDE.md) and
    ```bash
    cp .env.example .env.local
    ```
-   Leave `AZURE_DI_ENDPOINT` / `AZURE_DI_KEY` / `OPENROUTER_API_KEY` blank unless real values are
-   available — the app is designed to degrade gracefully without them.
+   Leave `OPENROUTER_API_KEY` blank unless a real value is available — the app is designed to
+   degrade gracefully without it. OCR itself (Tesseract.js) needs no key at all.
 
 3. **Start the dev server.** Default port is 3000; pass `-p <port>` if asked for a specific one
    (e.g. port 8080 has been used in this session before):

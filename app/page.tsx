@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useId } from "react";
 import type { RowStatus } from "@/lib/types";
 
 interface InvoiceRow {
@@ -22,17 +22,24 @@ interface InvoiceRow {
 
 const STATUS_LABELS: Record<RowStatus, string> = {
   pending: "در صف",
-  ocr_running: "در حال OCR...",
+  ocr_running: "در حال OCR…",
   ocr_done: "OCR انجام شد",
   ocr_error: "خطای OCR",
-  classify_running: "در حال دسته‌بندی...",
+  classify_running: "در حال دسته‌بندی…",
   classify_done: "دسته‌بندی شد",
   classify_error: "خطای دسته‌بندی",
 };
 
+const numberFormatter = new Intl.NumberFormat("en-US");
+
+function formatNumber(n: number | null | undefined) {
+  return n === undefined || n === null ? "" : numberFormatter.format(n);
+}
+
 export default function Home() {
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const fileInputId = useId();
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -136,7 +143,7 @@ export default function Home() {
       });
       lines.push(vals.join(","));
     }
-    const csv = "\uFEFF" + lines.join("\n"); // BOM برای نمایش درست فارسی در Excel
+    const csv = "﻿" + lines.join("\n"); // BOM برای نمایش درست فارسی در Excel
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -150,35 +157,49 @@ export default function Home() {
   const ocrDoneCount = rows.filter((r) => r.status === "ocr_done").length;
 
   return (
-    <main style={{ fontFamily: "Tahoma, sans-serif", padding: 24, maxWidth: 1300, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 4 }}>POC — استخراج و دسته‌بندی فاکتور</h1>
-      <p style={{ color: "#555", marginTop: 0 }}>
-        مرحله ۱: OCR با Azure Document Intelligence &nbsp;|&nbsp; مرحله ۲: دسته‌بندی با OpenRouter (رایگان)
-      </p>
+    <main id="main-content" className="app-shell">
+      <header className="app-header">
+        <h1 className="app-title">POC — استخراج و دسته‌بندی فاکتور</h1>
+        <p className="app-subtitle">
+          مرحله ۱: OCR با Tesseract.js (لوکال) + استخراج فیلد با OpenRouter &nbsp;|&nbsp; مرحله ۲: دسته‌بندی با
+          OpenRouter (رایگان)
+        </p>
+      </header>
 
-      <div style={{ margin: "16px 0" }}>
-        <input type="file" multiple accept="image/*,.pdf" onChange={handleFiles} />
+      <div className="upload-row">
+        <label className="upload-label" htmlFor={fileInputId}>
+          <span>انتخاب فایل‌های فاکتور</span>
+        </label>
+        <input
+          id={fileInputId}
+          name="invoiceFiles"
+          className="visually-hidden"
+          type="file"
+          multiple
+          accept="image/*,.pdf"
+          onChange={handleFiles}
+        />
+        <span className="upload-hint">
+          فقط تصویر (<span dir="ltr">jpg, png, …</span>) — PDF فعلاً پشتیبانی نمی‌شه
+        </span>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        <button onClick={runOCR} disabled={busy || pendingCount === 0}>
+      <div className="toolbar">
+        <button className="btn btn-primary" onClick={runOCR} disabled={busy || pendingCount === 0}>
           مرحله ۱: استخراج (OCR) — {pendingCount} فایل در صف
         </button>
-        <button onClick={runClassify} disabled={busy || ocrDoneCount === 0}>
+        <button className="btn btn-primary" onClick={runClassify} disabled={busy || ocrDoneCount === 0}>
           مرحله ۲: دسته‌بندی — {ocrDoneCount} آماده
         </button>
-        <button onClick={exportCSV} disabled={rows.length === 0}>
+        <button className="btn" onClick={exportCSV} disabled={rows.length === 0}>
           خروجی CSV
         </button>
       </div>
 
-      <div style={{ overflowX: "auto" }}>
-        <table
-          border={1}
-          cellPadding={6}
-          style={{ borderCollapse: "collapse", width: "100%", fontSize: 13, minWidth: 1100 }}
-        >
-          <thead style={{ background: "#f2f2f2" }}>
+      <h2 className="visually-hidden">نتایج پردازش فاکتورها</h2>
+      <div className="table-wrap">
+        <table>
+          <thead>
             <tr>
               <th>فایل</th>
               <th>وضعیت</th>
@@ -193,27 +214,37 @@ export default function Home() {
               <th>خطا</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody aria-live="polite">
             {rows.map((r) => (
               <tr key={r.id}>
-                <td>{r.filename}</td>
-                <td>{STATUS_LABELS[r.status]}</td>
-                <td>{r.vendorName}</td>
-                <td>{r.invoiceNumber}</td>
-                <td>{r.invoiceDate}</td>
-                <td>{r.totalAmount}</td>
+                <td className="cell-truncate" title={r.filename}>
+                  {r.filename}
+                </td>
+                <td>
+                  <span className={`status-badge status-${r.status}`}>{STATUS_LABELS[r.status]}</span>
+                </td>
+                <td className="cell-truncate" title={r.vendorName ?? undefined}>
+                  {r.vendorName}
+                </td>
+                <td className="cell-truncate" title={r.invoiceNumber ?? undefined}>
+                  {r.invoiceNumber}
+                </td>
+                <td className="cell-num">{r.invoiceDate}</td>
+                <td className="cell-num">{formatNumber(r.totalAmount)}</td>
                 <td>{r.currency}</td>
-                <td>{r.vatAmount}</td>
-                <td>{r.category}</td>
-                <td>{r.confidence !== undefined ? `${r.confidence}%` : ""}</td>
-                <td style={{ color: "red", maxWidth: 200 }}>{r.error}</td>
+                <td className="cell-num">{formatNumber(r.vatAmount)}</td>
+                <td className="cell-truncate" title={r.category}>
+                  {r.category}
+                </td>
+                <td className="cell-num">{r.confidence !== undefined ? `${r.confidence}%` : ""}</td>
+                <td className="cell-truncate cell-error" title={r.error}>
+                  {r.error}
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr>
-                <td colSpan={11} style={{ textAlign: "center", color: "#999", padding: 24 }}>
-                  هنوز فایلی آپلود نشده
-                </td>
+              <tr className="empty-row">
+                <td colSpan={11}>هنوز فایلی آپلود نشده</td>
               </tr>
             )}
           </tbody>

@@ -1,24 +1,75 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createWorker } from "tesseract.js";
+import path from "path";
+import fs from "fs";
 import type { OcrExtractedData } from "@/lib/types";
+
+const TESSERACT_CACHE_PATH = path.join(process.cwd(), ".tesseract-cache");
+// tesseract.js's Node cache writer does a plain fs.writeFile with no mkdir, so the
+// trained-data cache silently never persists unless this directory already exists.
+fs.mkdirSync(TESSERACT_CACHE_PATH, { recursive: true });
 
 export const runtime = "nodejs";
 
-// یه فیلد Azure Document Intelligence رو باز می‌کنه و مقدارش رو برمی‌گردونه
-function fieldValue(field: any): string | number | null {
-  if (!field) return null;
-  if (field.valueString !== undefined) return field.valueString;
-  if (field.valueNumber !== undefined) return field.valueNumber;
-  if (field.valueDate !== undefined) return field.valueDate;
-  if (field.content !== undefined) return field.content;
-  return null;
+function toStringOrNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s.length > 0 && s.toLowerCase() !== "null" ? s : null;
 }
 
-function fieldCurrencyAmount(field: any): number | null {
-  return field?.valueCurrency?.amount ?? null;
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
-function fieldCurrencyCode(field: any): string | null {
-  return field?.valueCurrency?.currencyCode ?? null;
+async function extractFields(
+  rawText: string,
+  apiKey: string,
+  model: string
+): Promise<Record<string, unknown>> {
+  const prompt = `You are an invoice data-extraction assistant. The text below was extracted via OCR from an invoice (it may be in Persian or English and may contain OCR noise/typos). Extract these fields and respond with ONLY a raw JSON object, no markdown fences, no explanation:
+
+{"vendorName": string|null, "invoiceNumber": string|null, "invoiceDate": string|null, "totalAmount": number|null, "currency": string|null, "vatAmount": number|null}
+
+Rules:
+- totalAmount and vatAmount must be plain numbers with no currency symbols, commas, or spaces, or null if not found.
+- currency should be an ISO code (e.g. "IRR", "USD") if identifiable, else the symbol/word as written, else null.
+- Never guess — use null for anything not clearly present in the text.
+
+OCR TEXT:
+"""
+${rawText.slice(0, 4000)}
+"""`;
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.1,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `خطای OpenRouter در استخراج فیلدها (${res.status}): ${errText}. اگه مدل انتخابی دیگه رایگان نیست، OPENROUTER_MODEL رو توی .env.local عوض کن — لیست فعلی: openrouter.ai/models?max_price=0`
+    );
+  }
+
+  const json = await res.json();
+  const content: string = json.choices?.[0]?.message?.content ?? "";
+  const cleaned = content.replace(/```json|```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    throw new Error(`پاسخ مدل قابل parse نبود (JSON نامعتبر): ${content.slice(0, 300)}`);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -38,12 +89,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "فایلی ارسال نشده" }, { status: 400 });
     }
 
-    const endpoint = process.env.AZURE_DI_ENDPOINT;
-    const key = process.env.AZURE_DI_KEY;
-
-    if (!endpoint || !key) {
+    if (file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")) {
       return NextResponse.json(
-        { error: "AZURE_DI_ENDPOINT یا AZURE_DI_KEY در .env.local تنظیم نشده" },
+        {
+          error:
+            "فعلاً فقط فایل تصویری (jpg/png/...) پشتیبانی می‌شه — Tesseract مستقیم از PDF پشتیبانی نمی‌کنه. لطفاً فایل رو قبل از آپلود به تصویر تبدیل کن.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "OPENROUTER_API_KEY در .env.local تنظیم نشده" },
         { status: 500 }
       );
     }
@@ -51,91 +112,41 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const analyzeUrl = `${endpoint.replace(
-      /\/$/,
-      ""
-    )}/formrecognizer/documentModels/prebuilt-invoice:analyze?api-version=2023-07-31`;
-
-    // مرحله ۱: ارسال درخواست تحلیل (Azure این کار رو async انجام می‌ده)
-    const analyzeRes = await fetch(analyzeUrl, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": file.type || "application/octet-stream",
-      },
-      body: buffer,
+    const worker = await createWorker(["eng", "fas"], undefined, {
+      cachePath: TESSERACT_CACHE_PATH,
     });
 
-    if (analyzeRes.status !== 202) {
-      const errText = await analyzeRes.text();
+    let rawText: string;
+    try {
+      const { data } = await worker.recognize(buffer);
+      rawText = data.text || "";
+    } finally {
+      await worker.terminate();
+    }
+
+    if (!rawText.trim()) {
       return NextResponse.json(
-        { error: `خطای Azure در ارسال فایل: ${errText}` },
+        { error: "Tesseract نتونست متنی از تصویر استخراج کنه — کیفیت یا وضوح تصویر رو چک کن" },
         { status: 500 }
       );
     }
 
-    const operationLocation = analyzeRes.headers.get("operation-location");
-    if (!operationLocation) {
-      return NextResponse.json(
-        { error: "هدر operation-location از Azure برنگشت" },
-        { status: 500 }
-      );
-    }
-
-    // مرحله ۲: Poll کردن نتیجه (تا وقتی status = succeeded بشه)
-    let result: any = null;
-    const maxAttempts = 20;
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 1500));
-
-      const pollRes = await fetch(operationLocation, {
-        headers: { "Ocp-Apim-Subscription-Key": key },
-      });
-      const pollJson = await pollRes.json();
-
-      if (pollJson.status === "succeeded") {
-        result = pollJson;
-        break;
-      }
-      if (pollJson.status === "failed") {
-        return NextResponse.json(
-          { error: "پردازش OCR روی Azure شکست خورد", details: pollJson },
-          { status: 500 }
-        );
-      }
-      // در غیر این صورت status = running یا notStarted → ادامه‌ی حلقه
-    }
-
-    if (!result) {
-      return NextResponse.json(
-        { error: "پردازش OCR بیش از حد طول کشید (timeout)" },
-        { status: 504 }
-      );
-    }
-
-    const doc = result.analyzeResult?.documents?.[0];
-    const fields = doc?.fields || {};
+    const fields = await extractFields(rawText, apiKey, model);
 
     const extracted: OcrExtractedData = {
-      vendorName: (fieldValue(fields.VendorName) as string) ?? null,
-      invoiceNumber: (fieldValue(fields.InvoiceId) as string) ?? null,
-      invoiceDate: (fieldValue(fields.InvoiceDate) as string) ?? null,
-      totalAmount:
-        fieldCurrencyAmount(fields.InvoiceTotal) ??
-        (fieldValue(fields.InvoiceTotal) as number) ??
-        null,
-      currency: fieldCurrencyCode(fields.InvoiceTotal) ?? null,
-      vatAmount:
-        fieldCurrencyAmount(fields.TotalTax) ??
-        (fieldValue(fields.TotalTax) as number) ??
-        null,
-      rawText: (result.analyzeResult?.content ?? "").slice(0, 2000),
+      vendorName: toStringOrNull(fields.vendorName),
+      invoiceNumber: toStringOrNull(fields.invoiceNumber),
+      invoiceDate: toStringOrNull(fields.invoiceDate),
+      totalAmount: toNumberOrNull(fields.totalAmount),
+      currency: toStringOrNull(fields.currency),
+      vatAmount: toNumberOrNull(fields.vatAmount),
+      rawText: rawText.slice(0, 2000),
     };
 
     return NextResponse.json({ success: true, data: extracted });
   } catch (err: any) {
     return NextResponse.json(
-      { error: `خطای غیرمنتظره: ${err.message}` },
+      { error: err.message || `خطای غیرمنتظره: ${err}` },
       { status: 500 }
     );
   }

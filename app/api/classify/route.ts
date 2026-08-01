@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const { vendorName, totalAmount, currency, invoiceNumber, rawText } = body;
 
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const model = process.env.OPENROUTER_MODEL || "qwen/qwen-2.5-7b-instruct:free";
+    const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
 
     if (!apiKey) {
       return NextResponse.json(

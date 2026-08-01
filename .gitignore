@@ -18,5 +18,8 @@
 *.pem
 npm-debug.log*
 
+# tesseract.js trained-data cache
+/.tesseract-cache/
+
 # typescript
 *.tsbuildinfo

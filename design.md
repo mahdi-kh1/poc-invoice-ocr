@@ -7,9 +7,9 @@ for Claude Code working conventions see [CLAUDE.md](CLAUDE.md).
 
 Measure feasibility (not build a product) of two independently-swappable services:
 
-1. Can Azure Document Intelligence's `prebuilt-invoice` model extract structured fields from
-   real invoices accurately enough?
-2. Can a free OpenRouter LLM classify the resulting expense into a fixed category list
+1. Can Tesseract.js (local, free, no signup) extract usable raw text from real invoice images,
+   and can a free OpenRouter LLM turn that raw text into structured fields accurately enough?
+2. Can the same free OpenRouter LLM classify the resulting expense into a fixed category list
    accurately enough?
 
 The two stages are kept decoupled in the UI (separate buttons, separate row states) specifically
@@ -21,17 +21,17 @@ OCR and vice versa.
 ```
 ┌─────────────┐   multipart/form-data    ┌──────────────────┐
 │  page.tsx   │ ───────────────────────► │  /api/ocr         │──┐
-│ (client)    │                          │  (route.ts)       │  │ POST analyze (202)
+│ (client)    │                          │  (route.ts)       │  │ image buffer
 │             │ ◄─── {vendorName, ... } ─│                    │  ▼
-│  row state  │                          └──────────────────┘  Azure Document Intelligence
-│  per file   │                                   │             prebuilt-invoice model
-│             │                                   └── poll operation-location
-│             │                                       every 1.5s, ≤20 attempts
+│  row state  │                          │                    │  Tesseract.js worker
+│  per file   │                          │                    │  (local, eng+fas) → raw text
+│             │                          │                    │──┐
+│             │                          └──────────────────┘  │ field-extraction prompt
 │             │        JSON                    ┌──────────────────┐
 │             │ ───────────────────────────────►│  /api/classify    │──┐
 │             │ ◄─── {category, confidence} ────│  (route.ts)        │  │ chat/completions
 └─────────────┘                                 └──────────────────┘  ▼
-       │                                                          OpenRouter
+       │                                                          OpenRouter (used by both routes)
        └── Export CSV (client-only: Blob + URL.createObjectURL)
 ```
 
@@ -55,7 +55,8 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
 
 ### `POST /api/ocr`
 
-Request: `multipart/form-data`, single field `file` (image or PDF).
+Request: `multipart/form-data`, single field `file` (image only — PDF is rejected with a
+friendly Persian error, see below).
 
 Success (`200`):
 ```json
@@ -68,24 +69,32 @@ Success (`200`):
     "totalAmount": "number | null",
     "currency": "string | null",
     "vatAmount": "number | null",
-    "rawText": "string (first 2000 chars of analyzeResult.content)"
+    "rawText": "string (first 2000 chars of the Tesseract.js OCR output)"
   }
 }
 ```
 
-Failure (`400`/`500`/`504`): `{ "error": "<Persian message>" }`. Known cases: no file, malformed
-request body (not multipart), missing `AZURE_DI_ENDPOINT`/`AZURE_DI_KEY`, Azure returning a
-non-202 on the initial analyze call, missing `operation-location` header, Azure status
-`"failed"`, or polling exhausting all 20 attempts (~30s) without reaching `"succeeded"`.
+Failure (`400`/`500`): `{ "error": "<Persian message>" }`. Known cases: no file, malformed
+request body (not multipart), a PDF upload (Tesseract.js doesn't support PDF — the client-side
+`accept` still allows `.pdf` for parity with the old Azure path, but the route rejects it),
+missing `OPENROUTER_API_KEY` (still required — it now also powers field extraction, not just
+classification), Tesseract producing empty text (blurry/corrupt image), or the field-extraction
+LLM call failing / returning unparseable JSON.
 
 Implementation notes:
-- Azure's analyze call is fire-and-poll: initial `POST .../prebuilt-invoice:analyze` returns
-  `202` with an `operation-location` header (no body); the route then polls that URL with the
-  same subscription key until `status` flips to `succeeded` or `failed`.
-- Field unwrapping helpers (`fieldValue`, `fieldCurrencyAmount`, `fieldCurrencyCode`) exist
-  because Azure's field shape varies by type (`valueString`, `valueNumber`, `valueDate`,
-  `valueCurrency.{amount,currencyCode}`, or fallback `content`) — extend these, not ad-hoc
-  inline access, if new fields are pulled from `fields`.
+- OCR is fully local: a Tesseract.js worker is created per request with `langs: ["eng", "fas"]`
+  (mixed Persian/English invoices), trained-data cached under `.tesseract-cache/` (gitignored) via
+  the `cachePath` option, and terminated after `recognize()` returns — no external OCR service,
+  no signup, no card required.
+- Tesseract only returns raw text, no structured fields — so unlike the old Azure path there's no
+  field-unwrapping helper. Instead, the raw text is sent to the OpenRouter chat model
+  (`extractFields` in `route.ts`) with a prompt asking for `vendorName`/`invoiceNumber`/etc. as
+  raw JSON, parsed the same way `/api/classify` parses its response (strip ```json fences, then
+  `JSON.parse`). `toStringOrNull`/`toNumberOrNull` coerce the LLM's (untrusted) field types before
+  they're returned to the client.
+- Because field extraction now goes through an LLM instead of a purpose-built invoice model,
+  accuracy depends more on OCR text quality and prompt wording than before — worth watching when
+  evaluating this stage's feasibility.
 
 ### `POST /api/classify`
 
@@ -123,21 +132,22 @@ Persian message, don't let anything bubble to an unguarded top-level throw.
 
 | Var | Consumed by | Notes |
 |---|---|---|
-| `AZURE_DI_ENDPOINT` | `/api/ocr` | trailing slash stripped before building the analyze URL |
-| `AZURE_DI_KEY` | `/api/ocr` | sent as `Ocp-Apim-Subscription-Key` |
-| `OPENROUTER_API_KEY` | `/api/classify` | sent as `Authorization: Bearer` |
-| `OPENROUTER_MODEL` | `/api/classify` | defaults to `qwen/qwen-2.5-7b-instruct:free` if unset |
+| `OPENROUTER_API_KEY` | `/api/ocr`, `/api/classify` | sent as `Authorization: Bearer`; now required by both routes since `/api/ocr` also uses it for field extraction |
+| `OPENROUTER_MODEL` | `/api/ocr`, `/api/classify` | defaults to `openai/gpt-oss-20b:free` if unset |
 
 Both routes treat a missing key as a normal, expected failure mode (POC users often won't have
-keys configured yet) — not an exceptional crash.
+keys configured yet) — not an exceptional crash. Tesseract.js needs no API key or account at all.
 
 ## Known limitations / explicitly out of scope
 
 - No auth, no rate limiting, no per-file size/type validation beyond the browser's `accept`
-  attribute.
+  attribute (which still lists `.pdf` even though `/api/ocr` rejects PDFs — revisit if PDF support
+  is added, e.g. via a `pdfjs-dist` rasterization step before handing pages to Tesseract).
 - No persistence layer — results exist only in browser memory for the session.
 - Sequential (not parallel/batched) processing of rows; fine for POC-scale test batches, would
-  need reworking for volume.
+  need reworking for volume. Each `/api/ocr` call also creates and terminates its own Tesseract
+  worker rather than reusing one across requests — simplest correct thing for sequential POC
+  usage, but adds per-request startup overhead if this ever needs to run in a hot loop.
 - Next.js is pinned to 14.x; several `npm audit` "high" advisories only have fixes in Next 16
   (SSRF/cache-poisoning classes relevant to self-hosted production deployments) — acceptable
   because this only ever runs on `localhost`. Revisit before any non-local deployment.

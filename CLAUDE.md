@@ -5,16 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A Next.js 14 (App Router, TypeScript) proof-of-concept that measures the feasibility of a
-two-stage invoice pipeline: OCR extraction via Azure Document Intelligence, then expense
-classification via an OpenRouter LLM. It is explicitly **not production code** — no auth, no
-rate limiting, no hardened file validation. See [README.md](README.md) for the full Persian
-writeup of architecture, env vars, and free-tier limits.
+two-stage invoice pipeline: OCR text extraction via Tesseract.js (local, free, no signup) with
+structured-field extraction and expense classification both handled by an OpenRouter LLM. It is
+explicitly **not production code** — no auth, no rate limiting, no hardened file validation. See
+[README.md](README.md) for the full Persian writeup of architecture, env vars, and free-tier
+limits.
 
 ## Commands
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in AZURE_DI_ENDPOINT / AZURE_DI_KEY / OPENROUTER_API_KEY
+cp .env.example .env.local   # then fill in OPENROUTER_API_KEY
 npm run dev                  # http://localhost:3000 (add `-- -p 8080` to change port)
 npm run build                # must pass with zero TS/ESLint errors before calling anything done
 npm run start                # serve the production build
@@ -41,15 +42,15 @@ app/page.tsx ("use client")
   └─ CSV export — pure client-side (Blob + URL.createObjectURL, UTF-8 BOM for Excel/Farsi)
 ```
 
-- **`app/api/ocr/route.ts`**: accepts `multipart/form-data` (field `file`), forwards the raw
-  bytes to Azure Document Intelligence's `prebuilt-invoice` model. Azure's analyze endpoint is
-  async: the route POSTs to `...:analyze`, reads the `operation-location` response header, then
-  polls that URL every 1.5s (up to 20 attempts) until `status === "succeeded"`. Field extraction
-  (`vendorName`, `invoiceNumber`, `totalAmount`, currency, VAT, etc.) is unwrapped from Azure's
-  nested `analyzeResult.documents[0].fields` shape by the local `fieldValue` /
-  `fieldCurrencyAmount` / `fieldCurrencyCode` helpers.
+- **`app/api/ocr/route.ts`**: accepts `multipart/form-data` (field `file`, image only — PDFs are
+  rejected with a friendly Persian error since Tesseract.js does not support PDF directly). Runs
+  the image through a Tesseract.js worker (`createWorker(["eng", "fas"], ...)`, trained-data
+  cached under `.tesseract-cache/`, gitignored) to get raw OCR text, then sends that text to the
+  same OpenRouter chat model used for classification with a field-extraction prompt to pull out
+  `vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`, `vatAmount` as JSON
+  (```json fences stripped before `JSON.parse`, same pattern as `/api/classify`).
 - **`app/api/classify/route.ts`**: takes the OCR output as JSON, prompts an OpenRouter chat model
-  (`OPENROUTER_MODEL`, default `qwen/qwen-2.5-7b-instruct:free` — check
+  (`OPENROUTER_MODEL`, default `openai/gpt-oss-20b:free` — check
   https://openrouter.ai/models?max_price=0 before relying on any `:free` model still being free)
   to return raw JSON (```json fences stripped before `JSON.parse`) constrained to one of the
   eleven hardcoded `CATEGORIES`.

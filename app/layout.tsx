@@ -1,6 +1,14 @@
-export const metadata = {
+import type { Metadata, Viewport } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
   title: "Invoice OCR POC",
   description: "POC تست کیفیت OCR و دسته‌بندی فاکتور",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0e17",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -10,7 +18,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fa" dir="rtl">
-      <body style={{ margin: 0 }}>{children}</body>
+      <body>
+        <a href="#main-content" className="skip-link">
+          پرش به محتوای اصلی
+        </a>
+        {children}
+      </body>
     </html>
   );
 }
