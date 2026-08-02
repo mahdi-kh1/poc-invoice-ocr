@@ -28,6 +28,8 @@ export interface OcrExtractedData {
   subtotal: number | null;
   receiptTime: string | null;
   rawText: string;
+  /** 1-based PDF page this receipt was read from, or null for a plain image upload. */
+  pageNumber: number | null;
 }
 
 export interface ClassifyResult {

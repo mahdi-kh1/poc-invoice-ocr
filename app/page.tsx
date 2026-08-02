@@ -32,6 +32,9 @@ interface InvoiceRow {
   category?: string;
   confidence?: number;
   error?: string;
+  pageNumber?: number | null;
+  /** Set when this row is one of several receipts fanned out from a single uploaded file. */
+  sourceLabel?: string;
 }
 
 const STATUS_LABELS: Record<RowStatus, string> = {
@@ -49,6 +52,7 @@ const DETAIL_FIELDS: { key: keyof InvoiceRow; label: string; numeric?: boolean }
   { key: "invoiceNumber", label: "Invoice Number" },
   { key: "invoiceDate", label: "Invoice Date" },
   { key: "receiptTime", label: "Receipt Time" },
+  { key: "pageNumber", label: "PDF Page" },
   { key: "totalAmount", label: "Total Amount", numeric: true },
   { key: "subtotal", label: "Subtotal (before VAT)", numeric: true },
   { key: "currency", label: "Currency" },
@@ -178,6 +182,12 @@ export default function Home() {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
+  // Replaces one row with one-or-more rows — a single uploaded file (esp. a multi-page or
+  // multi-receipt PDF) can yield several extracted receipts from a single OCR call.
+  function expandRow(id: string, replacements: InvoiceRow[]) {
+    setRows((prev) => prev.flatMap((r) => (r.id === id ? replacements : [r])));
+  }
+
   async function runOCR() {
     setBusy(true);
     const targets = rows.filter((r) => r.status === "pending");
@@ -191,29 +201,40 @@ export default function Home() {
         if (!res.ok || !json.success) {
           throw new Error(json.error || "OCR failed");
         }
-        updateRow(row.id, {
+        const results: any[] = Array.isArray(json.data) ? json.data : [json.data];
+        const newRows: InvoiceRow[] = results.map((data, idx) => ({
+          ...row,
+          id: results.length === 1 ? row.id : `${row.id}-${idx}`,
           status: "ocr_done",
-          vendorName: json.data.vendorName,
-          invoiceNumber: json.data.invoiceNumber,
-          invoiceDate: json.data.invoiceDate,
-          totalAmount: json.data.totalAmount,
-          currency: json.data.currency,
-          vatAmount: json.data.vatAmount,
-          transactionType: json.data.transactionType,
-          description: json.data.description,
-          debitAmount: json.data.debitAmount,
-          creditAmount: json.data.creditAmount,
-          balance: json.data.balance,
-          accountName: json.data.accountName,
-          accountNumber: json.data.accountNumber,
-          sortCode: json.data.sortCode,
-          vatNumber: json.data.vatNumber,
-          merchantAddress: json.data.merchantAddress,
-          paymentMethod: json.data.paymentMethod,
-          subtotal: json.data.subtotal,
-          receiptTime: json.data.receiptTime,
-          rawText: json.data.rawText,
-        });
+          sourceLabel:
+            results.length > 1
+              ? data.pageNumber
+                ? `page ${data.pageNumber}, receipt ${idx + 1}`
+                : `receipt ${idx + 1}`
+              : undefined,
+          vendorName: data.vendorName,
+          invoiceNumber: data.invoiceNumber,
+          invoiceDate: data.invoiceDate,
+          totalAmount: data.totalAmount,
+          currency: data.currency,
+          vatAmount: data.vatAmount,
+          transactionType: data.transactionType,
+          description: data.description,
+          debitAmount: data.debitAmount,
+          creditAmount: data.creditAmount,
+          balance: data.balance,
+          accountName: data.accountName,
+          accountNumber: data.accountNumber,
+          sortCode: data.sortCode,
+          vatNumber: data.vatNumber,
+          merchantAddress: data.merchantAddress,
+          paymentMethod: data.paymentMethod,
+          subtotal: data.subtotal,
+          receiptTime: data.receiptTime,
+          rawText: data.rawText,
+          pageNumber: data.pageNumber,
+        }));
+        expandRow(row.id, newRows);
       } catch (err: any) {
         updateRow(row.id, { status: "ocr_error", error: err.message });
       }
@@ -277,6 +298,7 @@ export default function Home() {
       "accountName",
       "accountNumber",
       "sortCode",
+      "pageNumber",
       "category",
       "confidence",
       "status",
@@ -347,7 +369,10 @@ export default function Home() {
           accept="image/*,.pdf"
           onChange={handleFiles}
         />
-        <span className="upload-hint">Images only (jpg, png, …) — PDF not supported yet</span>
+        <span className="upload-hint">
+          Images (jpg, png, …) or PDF — multi-page PDFs and pages with multiple receipts are each
+          split into separate rows automatically
+        </span>
       </div>
 
       <div className="toolbar">
@@ -390,6 +415,7 @@ export default function Home() {
               <tr key={r.id}>
                 <td className="cell-truncate" title={r.filename}>
                   {r.filename}
+                  {r.sourceLabel && <div className="cell-sublabel">{r.sourceLabel}</div>}
                 </td>
                 <td>
                   <span className={`status-badge status-${r.status}`}>{STATUS_LABELS[r.status]}</span>
@@ -437,6 +463,7 @@ export default function Home() {
             <div className="dialog-header">
               <h2 id="detail-dialog-title" className="dialog-title">
                 {selectedRow.filename}
+                {selectedRow.sourceLabel ? ` — ${selectedRow.sourceLabel}` : ""}
               </h2>
               <button
                 className="btn btn-icon"
@@ -448,7 +475,13 @@ export default function Home() {
             </div>
             <div className="dialog-content">
               <div className="dialog-image-wrap">
-                {previewUrl ? (
+                {previewUrl && selectedRow.file.type === "application/pdf" ? (
+                  <iframe
+                    src={`${previewUrl}${selectedRow.pageNumber ? `#page=${selectedRow.pageNumber}` : ""}`}
+                    title={`PDF preview for ${selectedRow.filename}`}
+                    className="dialog-image dialog-pdf-frame"
+                  />
+                ) : previewUrl ? (
                   <img src={previewUrl} alt={`Receipt image for ${selectedRow.filename}`} className="dialog-image" />
                 ) : (
                   <div className="dialog-image-placeholder">Preview not available</div>
@@ -575,14 +608,15 @@ export default function Home() {
           <div className="dialog-content dialog-content-stack">
             <ol className="help-steps">
               <li>
-                <strong>Upload files.</strong> Add one or more invoice/receipt images (jpg, png, …). PDF
-                isn't supported yet.
+                <strong>Upload files.</strong> Add one or more invoice/receipt images (jpg, png, …) or
+                PDFs. Each page of a PDF is OCR'd separately, and if a page contains more than one
+                receipt they're split into separate result rows automatically.
               </li>
               <li>
-                <strong>Step 1 — Extract (OCR).</strong> Runs Tesseract.js locally to read the text, then
-                an AI model (via OpenRouter) turns that text into structured fields — vendor, amounts,
-                VAT, dates, UK receipt details, or bank-statement fields, depending on what's on the
-                document.
+                <strong>Step 1 — Extract (OCR).</strong> Runs Tesseract.js locally to read the text (PDF
+                pages are rendered to images first), then an AI model (via OpenRouter) turns that text
+                into structured fields — vendor, amounts, VAT, dates, UK receipt details, or
+                bank-statement fields, depending on what's on the document.
               </li>
               <li>
                 <strong>View details.</strong> Click "View" on any row to see the full extracted field set
