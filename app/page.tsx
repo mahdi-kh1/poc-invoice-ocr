@@ -111,6 +111,7 @@ export default function Home() {
   const [newCategory, setNewCategory] = useState("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = useState(1);
   const fileInputId = useId();
   const newCategoryId = useId();
   const detailDialogRef = useRef<HTMLDialogElement>(null);
@@ -175,6 +176,7 @@ export default function Home() {
   }, [helpOpen]);
 
   useEffect(() => {
+    setPreviewZoom(1);
     if (!selectedRow) {
       setPreviewUrl(null);
       return;
@@ -184,6 +186,17 @@ export default function Home() {
     return () => URL.revokeObjectURL(url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRow?.id]);
+
+  // Native <dialog> "light dismiss": e.target === dialog is the commonly-cited trick, but it can
+  // fail to fire depending on how the dialog's content fills its box — checking the click's
+  // coordinates against the dialog's own rendered rect is the robust version of the same idea.
+  function closeDialogOnBackdropClick(e: React.MouseEvent<HTMLDialogElement>) {
+    const dialog = e.currentTarget;
+    const rect = dialog.getBoundingClientRect();
+    const insideDialog =
+      e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    if (!insideDialog) dialog.close();
+  }
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
@@ -485,9 +498,7 @@ export default function Home() {
         ref={detailDialogRef}
         className="detail-dialog"
         onClose={() => setSelectedRowId(null)}
-        onClick={(e) => {
-          if (e.target === detailDialogRef.current) detailDialogRef.current?.close();
-        }}
+        onClick={closeDialogOnBackdropClick}
         aria-labelledby="detail-dialog-title"
       >
         {selectedRow && (
@@ -511,20 +522,55 @@ export default function Home() {
               </div>
             )}
             <div className="dialog-content">
-              <div className="dialog-image-wrap">
-                {previewUrl && selectedRow.file.type === "application/pdf" ? (
-                  <iframe
-                    src={`${previewUrl}${selectedRow.pageNumber ? `#page=${selectedRow.pageNumber}` : ""}`}
-                    title={`PDF preview for ${selectedRow.filename}`}
-                    className="dialog-image dialog-pdf-frame"
-                  />
-                ) : previewUrl ? (
-                  <img src={previewUrl} alt={`Receipt image for ${selectedRow.filename}`} className="dialog-image" />
-                ) : (
-                  <div className="dialog-image-placeholder">Preview not available</div>
+              <div className="dialog-image-panel">
+                <div className={`dialog-image-wrap${previewZoom > 1 ? " dialog-image-wrap-zoomed" : ""}`}>
+                  {previewUrl && selectedRow.file.type === "application/pdf" ? (
+                    <iframe
+                      src={`${previewUrl}${selectedRow.pageNumber ? `#page=${selectedRow.pageNumber}` : ""}`}
+                      title={`PDF preview for ${selectedRow.filename}`}
+                      className="dialog-image dialog-pdf-frame"
+                    />
+                  ) : previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt={`Receipt image for ${selectedRow.filename}`}
+                      className="dialog-image"
+                      style={previewZoom > 1 ? { width: `${previewZoom * 100}%`, maxWidth: "none" } : undefined}
+                    />
+                  ) : (
+                    <div className="dialog-image-placeholder">Preview not available</div>
+                  )}
+                </div>
+                {previewUrl && selectedRow.file.type !== "application/pdf" && (
+                  <div className="dialog-zoom-toolbar">
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      aria-label="Zoom out"
+                      onClick={() => setPreviewZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                      disabled={previewZoom <= 0.5}
+                    >
+                      −
+                    </button>
+                    <span className="dialog-zoom-level">{Math.round(previewZoom * 100)}%</span>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      aria-label="Zoom in"
+                      onClick={() => setPreviewZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
+                      disabled={previewZoom >= 4}
+                    >
+                      +
+                    </button>
+                    {previewZoom !== 1 && (
+                      <button type="button" className="btn btn-small" onClick={() => setPreviewZoom(1)}>
+                        Reset
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
-              <dl className="detail-list">
+              <dl className="detail-list dialog-fields-panel">
                 <div className="detail-row">
                   <dt>Status</dt>
                   <dd>
@@ -574,9 +620,7 @@ export default function Home() {
         ref={categoriesDialogRef}
         className="categories-dialog"
         onClose={() => setCategoriesOpen(false)}
-        onClick={(e) => {
-          if (e.target === categoriesDialogRef.current) categoriesDialogRef.current?.close();
-        }}
+        onClick={closeDialogOnBackdropClick}
         aria-labelledby="categories-dialog-title"
       >
         <div className="dialog-body">
@@ -641,9 +685,7 @@ export default function Home() {
         ref={helpDialogRef}
         className="help-dialog"
         onClose={() => setHelpOpen(false)}
-        onClick={(e) => {
-          if (e.target === helpDialogRef.current) helpDialogRef.current?.close();
-        }}
+        onClick={closeDialogOnBackdropClick}
         aria-labelledby="help-dialog-title"
       >
         <div className="dialog-body">
