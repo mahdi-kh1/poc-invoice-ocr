@@ -96,7 +96,7 @@ input:focus-visible,
 .skip-link {
   position: absolute;
   top: -100%;
-  right: 16px;
+  left: 16px;
   z-index: 100;
   background: var(--bg-elevated);
   color: var(--text);
@@ -275,7 +275,7 @@ thead th {
   background: var(--bg-elevated);
   color: var(--text-muted);
   font-weight: 600;
-  text-align: right;
+  text-align: left;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-strong);
   white-space: nowrap;
@@ -506,7 +506,7 @@ dialog[open] {
 .detail-row dd {
   margin: 0;
   font-size: 0.86rem;
-  text-align: left;
+  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -574,4 +574,22 @@ dialog[open] {
 }
 .category-add-form input::placeholder {
   color: var(--text-faint);
+}
+
+/* Help dialog */
+.help-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+.help-steps li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+.help-steps strong {
+  color: var(--text);
 }

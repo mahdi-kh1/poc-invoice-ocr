@@ -1,7 +1,7 @@
 # Design — Invoice OCR + Classification POC
 
-Technical design reference for this repo. For setup/usage in Persian see [README.md](README.md);
-for Claude Code working conventions see [CLAUDE.md](CLAUDE.md).
+Technical design reference for this repo. For setup/usage see [README.md](README.md); for Claude
+Code working conventions see [CLAUDE.md](CLAUDE.md).
 
 ## Goal
 
@@ -24,7 +24,7 @@ OCR and vice versa.
 │ (client)    │                          │  (route.ts)       │  │ image buffer
 │             │ ◄─── {vendorName, ... } ─│                    │  ▼
 │  row state  │                          │                    │  Tesseract.js worker
-│  per file   │                          │                    │  (local, eng+fas) → raw text
+│  per file   │                          │                    │  (local, eng) → raw text
 │             │                          │                    │──┐
 │             │                          └──────────────────┘  │ field-extraction prompt
 │             │        JSON                    ┌──────────────────┐
@@ -51,28 +51,31 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
 - All row state lives in React state in `page.tsx` — nothing is persisted. A page refresh loses
   all results; Export CSV before reloading. (The category list is the one exception — see below.)
 
-## Row detail modal & categories panel (`app/page.tsx`)
+## Row detail modal, categories panel & help dialog (`app/page.tsx`)
 
-- Clicking "مشاهده" on a row opens a native `<dialog>` (`detailDialogRef`, `showModal()`/`close()`
+- Clicking "View" on a row opens a native `<dialog>` (`detailDialogRef`, `showModal()`/`close()`
   driven by `selectedRowId` state) showing every extracted field (`DETAIL_FIELDS`) plus an image
   preview built from the row's original `File` via `URL.createObjectURL` (revoked on close/row
   change). Native `<dialog>` was chosen over a hand-rolled overlay because it gets focus trapping,
   Escape-to-close, and focus restoration to the trigger element for free per the HTML spec —
   backdrop-click-to-close is the one bit added manually (checking `e.target === dialogRef.current`
   in the dialog's own `onClick`).
-- The "دسته‌بندی‌ها (N)" toolbar button opens a second `<dialog>` for managing the classification
+- The "Categories (N)" toolbar button opens a second `<dialog>` for managing the classification
   category list: add/remove chips, reset to defaults. This list is **not** the same as invoice row
   state — it's stored in `localStorage` under `CATEGORIES_STORAGE_KEY` (`lib/categories.ts`) so it
   survives page reloads, and it's sent as `categories` on every `/api/classify` call (see below).
   Categories are loaded from `localStorage` in a `useEffect` (not the initial `useState`) to avoid
   a server/client hydration mismatch, since `localStorage` isn't available during SSR.
+- The "Help" toolbar button opens a third `<dialog>` with a static numbered walkthrough of the
+  upload → OCR → view → classify → categories → export flow — pure copy, no state, same
+  `showModal()`/`close()` pattern as the other two dialogs.
 
 ## API contracts
 
 ### `POST /api/ocr`
 
 Request: `multipart/form-data`, single field `file` (image only — PDF is rejected with a
-friendly Persian error, see below).
+friendly error, see below).
 
 Success (`200`):
 ```json
@@ -93,34 +96,39 @@ Success (`200`):
     "accountName": "string | null",
     "accountNumber": "string | null",
     "sortCode": "string | null",
+    "vatNumber": "string | null",
+    "merchantAddress": "string | null",
+    "paymentMethod": "string | null",
+    "subtotal": "number | null",
+    "receiptTime": "string | null",
     "rawText": "string (first 2000 chars of the Tesseract.js OCR output)"
   }
 }
 ```
 
 `transactionType`/`description`/`debitAmount`/`creditAmount`/`balance`/`accountName`/`accountNumber`/
-`sortCode` are bank-statement-style fields, added alongside the original invoice fields so the same
-pipeline covers both invoice photos and bank-statement line images — whichever fields don't apply to
-the scanned document come back `null` rather than being guessed.
+`sortCode` are bank-statement-style fields; `vatNumber`/`merchantAddress`/`paymentMethod`/`subtotal`/
+`receiptTime` are UK-retail-receipt fields. Both groups are added alongside the original invoice
+fields so the same pipeline covers invoice photos, UK receipts, and bank-statement line images —
+whichever fields don't apply to the scanned document come back `null` rather than being guessed.
 
-Failure (`400`/`500`): `{ "error": "<Persian message>" }`. Known cases: no file, malformed
+Failure (`400`/`500`): `{ "error": "<message>" }`. Known cases: no file, malformed
 request body (not multipart), a PDF upload (Tesseract.js doesn't support PDF — the client-side
-`accept` still allows `.pdf` for parity with the old Azure path, but the route rejects it),
-missing `OPENROUTER_API_KEY` (still required — it now also powers field extraction, not just
-classification), Tesseract producing empty text (blurry/corrupt image), or the field-extraction
-LLM call failing / returning unparseable JSON.
+`accept` still allows `.pdf` for now, but the route rejects it),
+missing `OPENROUTER_API_KEY` (required — it powers field extraction, not just classification),
+Tesseract producing empty text (blurry/corrupt image), or the field-extraction LLM call failing /
+returning unparseable JSON.
 
 Implementation notes:
-- OCR is fully local: a Tesseract.js worker is created per request with `langs: ["eng", "fas"]`
-  (mixed Persian/English invoices), trained-data cached under `.tesseract-cache/` (gitignored) via
-  the `cachePath` option, and terminated after `recognize()` returns — no external OCR service,
-  no signup, no card required.
-- Tesseract only returns raw text, no structured fields — so unlike the old Azure path there's no
-  field-unwrapping helper. Instead, the raw text is sent to the OpenRouter chat model
-  (`extractFields` in `route.ts`) with a prompt asking for `vendorName`/`invoiceNumber`/etc. as
-  raw JSON, parsed the same way `/api/classify` parses its response (strip ```json fences, then
-  `JSON.parse`). `toStringOrNull`/`toNumberOrNull` coerce the LLM's (untrusted) field types before
-  they're returned to the client.
+- OCR is fully local: a Tesseract.js worker is created per request with `langs: ["eng"]`,
+  trained-data cached under `.tesseract-cache/` (gitignored) via the `cachePath` option, and
+  terminated after `recognize()` returns — no external OCR service, no signup, no card required.
+- Tesseract only returns raw text, no structured fields — there's no field-unwrapping helper.
+  Instead, the raw text is sent to the OpenRouter chat model (`extractFields` in `route.ts`) with a
+  prompt asking for `vendorName`/`invoiceNumber`/etc. as raw JSON, parsed the same way
+  `/api/classify` parses its response (strip ```json fences, then `JSON.parse`).
+  `toStringOrNull`/`toNumberOrNull` coerce the LLM's (untrusted) field types before they're
+  returned to the client.
 - Because field extraction now goes through an LLM instead of a purpose-built invoice model,
   accuracy depends more on OCR text quality and prompt wording than before — worth watching when
   evaluating this stage's feasibility.
@@ -132,7 +140,7 @@ Request: `application/json`
 { "vendorName": "string?", "totalAmount": "number?", "currency": "string?", "invoiceNumber": "string?", "rawText": "string?", "categories": "string[]?" }
 ```
 
-`categories` is the user-editable category list from the UI's "دسته‌بندی‌ها" panel (see below);
+`categories` is the user-editable category list from the UI's "Categories" panel (see below);
 if omitted or empty the route falls back to `DEFAULT_CATEGORIES` from `lib/categories.ts`.
 
 Success (`200`):
@@ -140,7 +148,7 @@ Success (`200`):
 { "success": true, "data": { "category": "<one of the requested categories>", "confidence": 0 } }
 ```
 
-Failure (`500`): `{ "error": "<Persian message>" }`. Known cases: missing `OPENROUTER_API_KEY`,
+Failure (`500`): `{ "error": "<message>" }`. Known cases: missing `OPENROUTER_API_KEY`,
 non-OK response from OpenRouter (message includes a hint to check
 `OPENROUTER_MODEL` against https://openrouter.ai/models?max_price=0), or the model's response not
 being parseable JSON after stripping ` ```json ` fences (raw content is included in the error
@@ -158,10 +166,10 @@ list, so a misbehaving model could return an out-of-list value un-caught.
 ## Error-handling policy
 
 Every route wraps its entire body in try/catch and always resolves to a JSON body with an
-`error` string in Persian on failure — the point is that the frontend, and a human eyeballing
+`error` string in plain English on failure — the point is that the frontend, and a human eyeballing
 network traffic, never sees a bare Next.js crash page or an English stack trace. When adding new
 failure paths, match this: catch close to the operation that can fail, translate to a specific
-Persian message, don't let anything bubble to an unguarded top-level throw.
+English message, don't let anything bubble to an unguarded top-level throw.
 
 ## Configuration
 

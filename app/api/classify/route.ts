@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "OPENROUTER_API_KEY در .env.local تنظیم نشده" },
+        { error: "OPENROUTER_API_KEY is not set in .env.local" },
         { status: 500 }
       );
     }
@@ -52,7 +52,7 @@ Respond ONLY with a raw JSON object, no markdown fences, no explanation:
       const errText = await res.text();
       return NextResponse.json(
         {
-          error: `خطای OpenRouter (${res.status}): ${errText}. اگه مدل انتخابی دیگه رایگان نیست، OPENROUTER_MODEL رو توی .env.local عوض کن — لیست فعلی: openrouter.ai/models?max_price=0`,
+          error: `OpenRouter error (${res.status}): ${errText}. If the selected model is no longer free, change OPENROUTER_MODEL in .env.local — current free list: openrouter.ai/models?max_price=0`,
         },
         { status: 500 }
       );
@@ -67,7 +67,7 @@ Respond ONLY with a raw JSON object, no markdown fences, no explanation:
       parsed = JSON.parse(cleaned);
     } catch (e) {
       return NextResponse.json(
-        { error: "پاسخ مدل قابل parse نبود (JSON نامعتبر)", raw: content },
+        { error: "Model response could not be parsed (invalid JSON)", raw: content },
         { status: 500 }
       );
     }
@@ -75,7 +75,7 @@ Respond ONLY with a raw JSON object, no markdown fences, no explanation:
     return NextResponse.json({ success: true, data: parsed });
   } catch (err: any) {
     return NextResponse.json(
-      { error: `خطای غیرمنتظره: ${err.message}` },
+      { error: `Unexpected error: ${err.message}` },
       { status: 500 }
     );
   }

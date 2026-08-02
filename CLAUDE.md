@@ -5,11 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A Next.js 14 (App Router, TypeScript) proof-of-concept that measures the feasibility of a
-two-stage invoice pipeline: OCR text extraction via Tesseract.js (local, free, no signup) with
-structured-field extraction and expense classification both handled by an OpenRouter LLM. It is
-explicitly **not production code** — no auth, no rate limiting, no hardened file validation. See
-[README.md](README.md) for the full Persian writeup of architecture, env vars, and free-tier
-limits.
+two-stage invoice/receipt pipeline: OCR text extraction via Tesseract.js (local, free, no signup)
+with structured-field extraction and expense classification both handled by an OpenRouter LLM.
+Extraction covers standard invoice fields, UK retail-receipt fields (VAT number, payment method,
+merchant address, subtotal, receipt time), and bank-statement-line fields — whichever don't apply
+to a given document come back `null`. It is explicitly **not production code** — no auth, no rate
+limiting, no hardened file validation. See [README.md](README.md) for setup/usage notes.
 
 ## Commands
 
@@ -37,20 +38,22 @@ app/page.tsx ("use client")
   ├─ upload (multiple files) → in-memory row state per file:
   │  pending → ocr_running → ocr_done → classify_running → classify_done
   │                       └→ ocr_error            └→ classify_error
-  ├─ "مرحله ۱" button → POST /api/ocr per pending row (one at a time, sequential)
-  ├─ "مرحله ۲" button → POST /api/classify per ocr_done row (sends current category list)
-  ├─ "مشاهده" per row → native <dialog> with full field list + image preview (object URL from the row's File)
-  ├─ "دسته‌بندی‌ها" button → native <dialog> to add/remove categories (persisted to localStorage)
-  └─ CSV export — pure client-side (Blob + URL.createObjectURL, UTF-8 BOM for Excel/Farsi)
+  ├─ "Step 1" button → POST /api/ocr per pending row (one at a time, sequential)
+  ├─ "Step 2" button → POST /api/classify per ocr_done row (sends current category list)
+  ├─ "View" per row → native <dialog> with full field list + image preview (object URL from the row's File)
+  ├─ "Categories" button → native <dialog> to add/remove categories (persisted to localStorage)
+  ├─ "Help" button → native <dialog> describing the end-to-end flow
+  └─ CSV export — pure client-side (Blob + URL.createObjectURL, UTF-8 BOM)
 ```
 
 - **`app/api/ocr/route.ts`**: accepts `multipart/form-data` (field `file`, image only — PDFs are
-  rejected with a friendly Persian error since Tesseract.js does not support PDF directly). Runs
-  the image through a Tesseract.js worker (`createWorker(["eng", "fas"], ...)`, trained-data
-  cached under `.tesseract-cache/`, gitignored) to get raw OCR text, then sends that text to the
-  same OpenRouter chat model used for classification with a field-extraction prompt to pull out
-  both invoice fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`,
-  `vatAmount`) and bank-statement fields (`transactionType`, `description`, `debitAmount`,
+  rejected with a friendly error since Tesseract.js does not support PDF directly). Runs the image
+  through a Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data cached under
+  `.tesseract-cache/`, gitignored) to get raw OCR text, then sends that text to the same
+  OpenRouter chat model used for classification with a field-extraction prompt to pull out
+  invoice fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`,
+  `vatAmount`), UK-receipt fields (`vatNumber`, `merchantAddress`, `paymentMethod`, `subtotal`,
+  `receiptTime`), and bank-statement fields (`transactionType`, `description`, `debitAmount`,
   `creditAmount`, `balance`, `accountName`, `accountNumber`, `sortCode`) as JSON — whichever don't
   apply to the scanned document come back `null` (```json fences stripped before `JSON.parse`,
   same pattern as `/api/classify`).
@@ -69,12 +72,12 @@ app/page.tsx ("use client")
 
 ## Conventions specific to this repo
 
-- **Every user-facing error must be a friendly Persian string returned as JSON** (`{ error: "..." }`
-  with a non-2xx status), never a raw thrown error or an empty 500 — this includes missing env
-  vars, OpenRouter failures, and malformed request bodies. Both routes wrap their entire
-  body in try/catch for this reason; keep that pattern for any new route.
-- UI is RTL end-to-end: `app/layout.tsx` sets `lang="fa" dir="rtl"` on `<html>`, and all
-  user-visible strings (status labels, table headers, button text) are Persian.
+- **Every user-facing error must be a friendly, plain-English string returned as JSON**
+  (`{ error: "..." }` with a non-2xx status), never a raw thrown error or an empty 500 — this
+  includes missing env vars, OpenRouter failures, and malformed request bodies. Both routes wrap
+  their entire body in try/catch for this reason; keep that pattern for any new route.
+- UI is English/LTR end-to-end: `app/layout.tsx` sets `lang="en" dir="ltr"` on `<html>`, and all
+  user-visible strings (status labels, table headers, button text) are English.
 - Import alias `@/*` maps to the repo root (`tsconfig.json`), e.g. `@/lib/types`.
 - Next.js is pinned to the 14.x line on purpose (matches the original spec); `npm audit` will
   show unresolved "high" advisories that only have fixes in Next 16 — see the note near the end

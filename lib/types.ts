@@ -22,6 +22,11 @@ export interface OcrExtractedData {
   accountName: string | null;
   accountNumber: string | null;
   sortCode: string | null;
+  vatNumber: string | null;
+  merchantAddress: string | null;
+  paymentMethod: string | null;
+  subtotal: number | null;
+  receiptTime: string | null;
   rawText: string;
 }
 

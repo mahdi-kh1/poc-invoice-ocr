@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Invoice OCR POC",
-  description: "POC تست کیفیت OCR و دسته‌بندی فاکتور",
+  description: "POC testing OCR quality and expense classification",
 };
 
 export const viewport: Viewport = {
@@ -17,10 +17,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fa" dir="rtl">
+    <html lang="en" dir="ltr">
       <body>
         <a href="#main-content" className="skip-link">
-          پرش به محتوای اصلی
+          Skip to main content
         </a>
         {children}
       </body>

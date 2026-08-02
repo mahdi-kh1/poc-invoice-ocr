@@ -23,6 +23,11 @@ interface InvoiceRow {
   accountName?: string | null;
   accountNumber?: string | null;
   sortCode?: string | null;
+  vatNumber?: string | null;
+  merchantAddress?: string | null;
+  paymentMethod?: string | null;
+  subtotal?: number | null;
+  receiptTime?: string | null;
   rawText?: string;
   category?: string;
   confidence?: number;
@@ -30,32 +35,37 @@ interface InvoiceRow {
 }
 
 const STATUS_LABELS: Record<RowStatus, string> = {
-  pending: "در صف",
-  ocr_running: "در حال OCR…",
-  ocr_done: "OCR انجام شد",
-  ocr_error: "خطای OCR",
-  classify_running: "در حال دسته‌بندی…",
-  classify_done: "دسته‌بندی شد",
-  classify_error: "خطای دسته‌بندی",
+  pending: "Pending",
+  ocr_running: "Running OCR…",
+  ocr_done: "OCR Done",
+  ocr_error: "OCR Error",
+  classify_running: "Classifying…",
+  classify_done: "Classified",
+  classify_error: "Classification Error",
 };
 
 const DETAIL_FIELDS: { key: keyof InvoiceRow; label: string; numeric?: boolean }[] = [
-  { key: "vendorName", label: "فروشنده" },
-  { key: "invoiceNumber", label: "شماره فاکتور" },
-  { key: "invoiceDate", label: "تاریخ فاکتور" },
-  { key: "totalAmount", label: "مبلغ کل", numeric: true },
-  { key: "currency", label: "ارز" },
-  { key: "vatAmount", label: "مالیات", numeric: true },
-  { key: "transactionType", label: "نوع تراکنش" },
-  { key: "description", label: "شرح تراکنش" },
-  { key: "debitAmount", label: "برداشت (بدهکار)", numeric: true },
-  { key: "creditAmount", label: "واریز (بستانکار)", numeric: true },
-  { key: "balance", label: "مانده حساب", numeric: true },
-  { key: "accountName", label: "نام حساب" },
-  { key: "accountNumber", label: "شماره حساب" },
-  { key: "sortCode", label: "کد شعبه" },
-  { key: "category", label: "دسته‌بندی" },
-  { key: "confidence", label: "اطمینان", numeric: true },
+  { key: "vendorName", label: "Vendor" },
+  { key: "invoiceNumber", label: "Invoice Number" },
+  { key: "invoiceDate", label: "Invoice Date" },
+  { key: "receiptTime", label: "Receipt Time" },
+  { key: "totalAmount", label: "Total Amount", numeric: true },
+  { key: "subtotal", label: "Subtotal (before VAT)", numeric: true },
+  { key: "currency", label: "Currency" },
+  { key: "vatAmount", label: "VAT Amount", numeric: true },
+  { key: "vatNumber", label: "VAT Number" },
+  { key: "paymentMethod", label: "Payment Method" },
+  { key: "merchantAddress", label: "Merchant Address" },
+  { key: "transactionType", label: "Transaction Type" },
+  { key: "description", label: "Description" },
+  { key: "debitAmount", label: "Debit Amount", numeric: true },
+  { key: "creditAmount", label: "Credit Amount", numeric: true },
+  { key: "balance", label: "Balance", numeric: true },
+  { key: "accountName", label: "Account Name" },
+  { key: "accountNumber", label: "Account Number" },
+  { key: "sortCode", label: "Sort Code" },
+  { key: "category", label: "Category" },
+  { key: "confidence", label: "Confidence", numeric: true },
 ];
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -82,7 +92,9 @@ export default function Home() {
   const newCategoryId = useId();
   const detailDialogRef = useRef<HTMLDialogElement>(null);
   const categoriesDialogRef = useRef<HTMLDialogElement>(null);
+  const helpDialogRef = useRef<HTMLDialogElement>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const selectedRow = rows.find((r) => r.id === selectedRowId) || null;
 
@@ -130,6 +142,16 @@ export default function Home() {
   }, [categoriesOpen]);
 
   useEffect(() => {
+    const dialog = helpDialogRef.current;
+    if (!dialog) return;
+    if (helpOpen) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [helpOpen]);
+
+  useEffect(() => {
     if (!selectedRow) {
       setPreviewUrl(null);
       return;
@@ -167,7 +189,7 @@ export default function Home() {
         const res = await fetch("/api/ocr", { method: "POST", body: fd });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.error || "OCR ناموفق بود");
+          throw new Error(json.error || "OCR failed");
         }
         updateRow(row.id, {
           status: "ocr_done",
@@ -185,6 +207,11 @@ export default function Home() {
           accountName: json.data.accountName,
           accountNumber: json.data.accountNumber,
           sortCode: json.data.sortCode,
+          vatNumber: json.data.vatNumber,
+          merchantAddress: json.data.merchantAddress,
+          paymentMethod: json.data.paymentMethod,
+          subtotal: json.data.subtotal,
+          receiptTime: json.data.receiptTime,
           rawText: json.data.rawText,
         });
       } catch (err: any) {
@@ -214,7 +241,7 @@ export default function Home() {
         });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.error || "دسته‌بندی ناموفق بود");
+          throw new Error(json.error || "Classification failed");
         }
         updateRow(row.id, {
           status: "classify_done",
@@ -234,9 +261,14 @@ export default function Home() {
       "vendorName",
       "invoiceNumber",
       "invoiceDate",
+      "receiptTime",
       "totalAmount",
+      "subtotal",
       "currency",
       "vatAmount",
+      "vatNumber",
+      "paymentMethod",
+      "merchantAddress",
       "transactionType",
       "description",
       "debitAmount",
@@ -259,7 +291,7 @@ export default function Home() {
       });
       lines.push(vals.join(","));
     }
-    const csv = "﻿" + lines.join("\n"); // BOM برای نمایش درست فارسی در Excel
+    const csv = "﻿" + lines.join("\n"); // BOM so Excel opens the file as UTF-8
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -295,16 +327,16 @@ export default function Home() {
   return (
     <main id="main-content" className="app-shell">
       <header className="app-header">
-        <h1 className="app-title">POC — استخراج و دسته‌بندی فاکتور</h1>
+        <h1 className="app-title">POC — Invoice &amp; Receipt Extraction and Classification</h1>
         <p className="app-subtitle">
-          مرحله ۱: OCR با Tesseract.js (لوکال) + استخراج فیلد با OpenRouter &nbsp;|&nbsp; مرحله ۲: دسته‌بندی با
-          OpenRouter (رایگان)
+          Step 1: OCR via Tesseract.js (local) + field extraction via OpenRouter &nbsp;|&nbsp; Step 2:
+          Classification via OpenRouter (free)
         </p>
       </header>
 
       <div className="upload-row">
         <label className="upload-label" htmlFor={fileInputId}>
-          <span>انتخاب فایل‌های فاکتور</span>
+          <span>Select invoice/receipt files</span>
         </label>
         <input
           id={fileInputId}
@@ -315,41 +347,42 @@ export default function Home() {
           accept="image/*,.pdf"
           onChange={handleFiles}
         />
-        <span className="upload-hint">
-          فقط تصویر (<span dir="ltr">jpg, png, …</span>) — PDF فعلاً پشتیبانی نمی‌شه
-        </span>
+        <span className="upload-hint">Images only (jpg, png, …) — PDF not supported yet</span>
       </div>
 
       <div className="toolbar">
         <button className="btn btn-primary" onClick={runOCR} disabled={busy || pendingCount === 0}>
-          مرحله ۱: استخراج (OCR) — {pendingCount} فایل در صف
+          Step 1: Extract (OCR) — {pendingCount} queued
         </button>
         <button className="btn btn-primary" onClick={runClassify} disabled={busy || ocrDoneCount === 0}>
-          مرحله ۲: دسته‌بندی — {ocrDoneCount} آماده
+          Step 2: Classify — {ocrDoneCount} ready
         </button>
         <button className="btn" onClick={exportCSV} disabled={rows.length === 0}>
-          خروجی CSV
+          Export CSV
         </button>
         <button className="btn" onClick={() => setCategoriesOpen(true)}>
-          دسته‌بندی‌ها ({categories.length})
+          Categories ({categories.length})
+        </button>
+        <button className="btn" onClick={() => setHelpOpen(true)}>
+          Help
         </button>
       </div>
 
-      <h2 className="visually-hidden">نتایج پردازش فاکتورها</h2>
+      <h2 className="visually-hidden">Invoice processing results</h2>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>فایل</th>
-              <th>وضعیت</th>
-              <th>فروشنده</th>
-              <th>تاریخ</th>
-              <th>مبلغ کل</th>
-              <th>ارز</th>
-              <th>دسته‌بندی</th>
-              <th>اطمینان</th>
-              <th>جزئیات</th>
-              <th>خطا</th>
+              <th>File</th>
+              <th>Status</th>
+              <th>Vendor</th>
+              <th>Date</th>
+              <th>Total</th>
+              <th>Currency</th>
+              <th>Category</th>
+              <th>Confidence</th>
+              <th>Details</th>
+              <th>Error</th>
             </tr>
           </thead>
           <tbody aria-live="polite">
@@ -373,7 +406,7 @@ export default function Home() {
                 <td className="cell-num">{r.confidence !== undefined ? `${r.confidence}%` : ""}</td>
                 <td>
                   <button className="btn btn-small" onClick={() => setSelectedRowId(r.id)}>
-                    مشاهده
+                    View
                   </button>
                 </td>
                 <td className="cell-truncate cell-error" title={r.error}>
@@ -383,7 +416,7 @@ export default function Home() {
             ))}
             {rows.length === 0 && (
               <tr className="empty-row">
-                <td colSpan={10}>هنوز فایلی آپلود نشده</td>
+                <td colSpan={10}>No files uploaded yet</td>
               </tr>
             )}
           </tbody>
@@ -407,7 +440,7 @@ export default function Home() {
               </h2>
               <button
                 className="btn btn-icon"
-                aria-label="بستن پنجره"
+                aria-label="Close dialog"
                 onClick={() => detailDialogRef.current?.close()}
               >
                 ×
@@ -416,14 +449,14 @@ export default function Home() {
             <div className="dialog-content">
               <div className="dialog-image-wrap">
                 {previewUrl ? (
-                  <img src={previewUrl} alt={`تصویر فاکتور ${selectedRow.filename}`} className="dialog-image" />
+                  <img src={previewUrl} alt={`Receipt image for ${selectedRow.filename}`} className="dialog-image" />
                 ) : (
-                  <div className="dialog-image-placeholder">پیش‌نمایش در دسترس نیست</div>
+                  <div className="dialog-image-placeholder">Preview not available</div>
                 )}
               </div>
               <dl className="detail-list">
                 <div className="detail-row">
-                  <dt>وضعیت</dt>
+                  <dt>Status</dt>
                   <dd>
                     <span className={`status-badge status-${selectedRow.status}`}>
                       {STATUS_LABELS[selectedRow.status]}
@@ -440,7 +473,7 @@ export default function Home() {
                 ))}
                 {selectedRow.error && (
                   <div className="detail-row">
-                    <dt>خطا</dt>
+                    <dt>Error</dt>
                     <dd className="cell-error">{selectedRow.error}</dd>
                   </div>
                 )}
@@ -462,11 +495,11 @@ export default function Home() {
         <div className="dialog-body">
           <div className="dialog-header">
             <h2 id="categories-dialog-title" className="dialog-title">
-              مدیریت دسته‌بندی‌ها
+              Manage Categories
             </h2>
             <button
               className="btn btn-icon"
-              aria-label="بستن پنجره"
+              aria-label="Close dialog"
               onClick={() => categoriesDialogRef.current?.close()}
             >
               ×
@@ -474,7 +507,8 @@ export default function Home() {
           </div>
           <div className="dialog-content dialog-content-stack">
             <p className="app-subtitle">
-              این دسته‌ها در مرحله ۲ (دسته‌بندی) به مدل پیشنهاد داده می‌شن و روی همین مرورگر ذخیره می‌مونن.
+              These categories are suggested to the model in Step 2 (Classification) and saved in this
+              browser.
             </p>
             <ul className="category-chip-list">
               {categories.map((c) => (
@@ -483,35 +517,93 @@ export default function Home() {
                   <button
                     type="button"
                     className="chip-remove"
-                    aria-label={`حذف دسته «${c}»`}
+                    aria-label={`Remove category "${c}"`}
                     onClick={() => removeCategory(c)}
                   >
                     ×
                   </button>
                 </li>
               ))}
-              {categories.length === 0 && <li className="app-subtitle">هیچ دسته‌ای تعریف نشده</li>}
+              {categories.length === 0 && <li className="app-subtitle">No categories defined</li>}
             </ul>
             <form className="category-add-form" onSubmit={addCategory}>
               <label htmlFor={newCategoryId} className="visually-hidden">
-                دسته‌بندی جدید
+                New category
               </label>
               <input
                 id={newCategoryId}
                 name="newCategory"
                 type="text"
                 autoComplete="off"
-                placeholder="مثلاً: هزینه‌های اداری…"
+                placeholder="e.g. Office Supplies…"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
               />
               <button type="submit" className="btn btn-primary" disabled={!newCategory.trim()}>
-                افزودن
+                Add
               </button>
             </form>
             <button type="button" className="btn btn-ghost-danger" onClick={resetCategories}>
-              بازگشت به دسته‌بندی‌های پیش‌فرض
+              Reset to default categories
             </button>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog
+        ref={helpDialogRef}
+        className="help-dialog"
+        onClose={() => setHelpOpen(false)}
+        onClick={(e) => {
+          if (e.target === helpDialogRef.current) helpDialogRef.current?.close();
+        }}
+        aria-labelledby="help-dialog-title"
+      >
+        <div className="dialog-body">
+          <div className="dialog-header">
+            <h2 id="help-dialog-title" className="dialog-title">
+              How This Works
+            </h2>
+            <button
+              className="btn btn-icon"
+              aria-label="Close dialog"
+              onClick={() => helpDialogRef.current?.close()}
+            >
+              ×
+            </button>
+          </div>
+          <div className="dialog-content dialog-content-stack">
+            <ol className="help-steps">
+              <li>
+                <strong>Upload files.</strong> Add one or more invoice/receipt images (jpg, png, …). PDF
+                isn't supported yet.
+              </li>
+              <li>
+                <strong>Step 1 — Extract (OCR).</strong> Runs Tesseract.js locally to read the text, then
+                an AI model (via OpenRouter) turns that text into structured fields — vendor, amounts,
+                VAT, dates, UK receipt details, or bank-statement fields, depending on what's on the
+                document.
+              </li>
+              <li>
+                <strong>View details.</strong> Click "View" on any row to see the full extracted field set
+                next to the original image.
+              </li>
+              <li>
+                <strong>Step 2 — Classify.</strong> An AI model assigns each row a spending category from
+                your category list.
+              </li>
+              <li>
+                <strong>Categories.</strong> Add or remove categories any time — changes are saved in this
+                browser and used for future classification runs.
+              </li>
+              <li>
+                <strong>Export CSV.</strong> Download all results as a spreadsheet.
+              </li>
+            </ol>
+            <p className="app-subtitle">
+              This is a feasibility proof-of-concept — OCR and classification accuracy will vary by
+              document quality and the free model in use.
+            </p>
           </div>
         </div>
       </dialog>
