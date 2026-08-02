@@ -38,7 +38,9 @@ app/page.tsx ("use client")
   │  pending → ocr_running → ocr_done → classify_running → classify_done
   │                       └→ ocr_error            └→ classify_error
   ├─ "مرحله ۱" button → POST /api/ocr per pending row (one at a time, sequential)
-  ├─ "مرحله ۲" button → POST /api/classify per ocr_done row
+  ├─ "مرحله ۲" button → POST /api/classify per ocr_done row (sends current category list)
+  ├─ "مشاهده" per row → native <dialog> with full field list + image preview (object URL from the row's File)
+  ├─ "دسته‌بندی‌ها" button → native <dialog> to add/remove categories (persisted to localStorage)
   └─ CSV export — pure client-side (Blob + URL.createObjectURL, UTF-8 BOM for Excel/Farsi)
 ```
 
@@ -47,22 +49,29 @@ app/page.tsx ("use client")
   the image through a Tesseract.js worker (`createWorker(["eng", "fas"], ...)`, trained-data
   cached under `.tesseract-cache/`, gitignored) to get raw OCR text, then sends that text to the
   same OpenRouter chat model used for classification with a field-extraction prompt to pull out
-  `vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`, `vatAmount` as JSON
-  (```json fences stripped before `JSON.parse`, same pattern as `/api/classify`).
-- **`app/api/classify/route.ts`**: takes the OCR output as JSON, prompts an OpenRouter chat model
-  (`OPENROUTER_MODEL`, default `openai/gpt-oss-20b:free` — check
-  https://openrouter.ai/models?max_price=0 before relying on any `:free` model still being free)
-  to return raw JSON (```json fences stripped before `JSON.parse`) constrained to one of the
-  eleven hardcoded `CATEGORIES`.
+  both invoice fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`,
+  `vatAmount`) and bank-statement fields (`transactionType`, `description`, `debitAmount`,
+  `creditAmount`, `balance`, `accountName`, `accountNumber`, `sortCode`) as JSON — whichever don't
+  apply to the scanned document come back `null` (```json fences stripped before `JSON.parse`,
+  same pattern as `/api/classify`).
+- **`app/api/classify/route.ts`**: takes the OCR output plus a `categories: string[]` array as
+  JSON, prompts an OpenRouter chat model (`OPENROUTER_MODEL`, default `openai/gpt-oss-20b:free` —
+  check https://openrouter.ai/models?max_price=0 before relying on any `:free` model still being
+  free) to return raw JSON (```json fences stripped before `JSON.parse`) constrained to one of the
+  given categories. Falls back to `DEFAULT_CATEGORIES` (`lib/categories.ts`) if `categories` is
+  omitted or empty — that list is no longer hardcoded in this route.
 - **`lib/types.ts`**: the only cross-cutting module — `RowStatus`, `OcrExtractedData`,
   `ClassifyResult` are shared between both API routes and `app/page.tsx`. Change a field shape
   here first if extending the pipeline.
+- **`lib/categories.ts`**: `DEFAULT_CATEGORIES` (seed list) and `CATEGORIES_STORAGE_KEY` (the
+  `localStorage` key the client persists its editable category list under) — shared between
+  `app/page.tsx` and `/api/classify`.
 
 ## Conventions specific to this repo
 
 - **Every user-facing error must be a friendly Persian string returned as JSON** (`{ error: "..." }`
   with a non-2xx status), never a raw thrown error or an empty 500 — this includes missing env
-  vars, Azure/OpenRouter failures, and malformed request bodies. Both routes wrap their entire
+  vars, OpenRouter failures, and malformed request bodies. Both routes wrap their entire
   body in try/catch for this reason; keep that pattern for any new route.
 - UI is RTL end-to-end: `app/layout.tsx` sets `lang="fa" dir="rtl"` on `<html>`, and all
   user-visible strings (status labels, table headers, button text) are Persian.

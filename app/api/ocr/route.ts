@@ -28,12 +28,19 @@ async function extractFields(
   apiKey: string,
   model: string
 ): Promise<Record<string, unknown>> {
-  const prompt = `You are an invoice data-extraction assistant. The text below was extracted via OCR from an invoice (it may be in Persian or English and may contain OCR noise/typos). Extract these fields and respond with ONLY a raw JSON object, no markdown fences, no explanation:
+  const prompt = `You are a document data-extraction assistant. The text below was extracted via OCR from a financial document — an invoice, receipt, or bank-statement line (it may be in Persian or English and may contain OCR noise/typos). Extract these fields and respond with ONLY a raw JSON object, no markdown fences, no explanation:
 
-{"vendorName": string|null, "invoiceNumber": string|null, "invoiceDate": string|null, "totalAmount": number|null, "currency": string|null, "vatAmount": number|null}
+{"vendorName": string|null, "invoiceNumber": string|null, "invoiceDate": string|null, "totalAmount": number|null, "currency": string|null, "vatAmount": number|null, "transactionType": string|null, "description": string|null, "debitAmount": number|null, "creditAmount": number|null, "balance": number|null, "accountName": string|null, "accountNumber": string|null, "sortCode": string|null}
+
+Field notes:
+- vendorName/invoiceNumber/invoiceDate/totalAmount/vatAmount: standard invoice fields, if present.
+- transactionType: short code/label if this looks like a bank transaction (e.g. "FPI", "DD", "TFR"), else null.
+- description: the raw transaction/line-item description text, if present.
+- debitAmount/creditAmount/balance: bank-statement amounts, if present.
+- accountName/accountNumber/sortCode: bank account identifiers, if present.
 
 Rules:
-- totalAmount and vatAmount must be plain numbers with no currency symbols, commas, or spaces, or null if not found.
+- All amount fields must be plain numbers with no currency symbols, commas, or spaces, or null if not found.
 - currency should be an ISO code (e.g. "IRR", "USD") if identifiable, else the symbol/word as written, else null.
 - Never guess — use null for anything not clearly present in the text.
 
@@ -140,6 +147,14 @@ export async function POST(req: NextRequest) {
       totalAmount: toNumberOrNull(fields.totalAmount),
       currency: toStringOrNull(fields.currency),
       vatAmount: toNumberOrNull(fields.vatAmount),
+      transactionType: toStringOrNull(fields.transactionType),
+      description: toStringOrNull(fields.description),
+      debitAmount: toNumberOrNull(fields.debitAmount),
+      creditAmount: toNumberOrNull(fields.creditAmount),
+      balance: toNumberOrNull(fields.balance),
+      accountName: toStringOrNull(fields.accountName),
+      accountNumber: toStringOrNull(fields.accountNumber),
+      sortCode: toStringOrNull(fields.sortCode),
       rawText: rawText.slice(0, 2000),
     };
 

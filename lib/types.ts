@@ -14,6 +14,14 @@ export interface OcrExtractedData {
   totalAmount: number | null;
   currency: string | null;
   vatAmount: number | null;
+  transactionType: string | null;
+  description: string | null;
+  debitAmount: number | null;
+  creditAmount: number | null;
+  balance: number | null;
+  accountName: string | null;
+  accountNumber: string | null;
+  sortCode: string | null;
   rawText: string;
 }
 

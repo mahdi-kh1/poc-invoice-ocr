@@ -49,7 +49,23 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
 - There is no retry affordance in the UI today; a failed row stays in `*_error` until the file is
   re-added. (Worth revisiting if this POC graduates past feasibility testing.)
 - All row state lives in React state in `page.tsx` — nothing is persisted. A page refresh loses
-  all results; Export CSV before reloading.
+  all results; Export CSV before reloading. (The category list is the one exception — see below.)
+
+## Row detail modal & categories panel (`app/page.tsx`)
+
+- Clicking "مشاهده" on a row opens a native `<dialog>` (`detailDialogRef`, `showModal()`/`close()`
+  driven by `selectedRowId` state) showing every extracted field (`DETAIL_FIELDS`) plus an image
+  preview built from the row's original `File` via `URL.createObjectURL` (revoked on close/row
+  change). Native `<dialog>` was chosen over a hand-rolled overlay because it gets focus trapping,
+  Escape-to-close, and focus restoration to the trigger element for free per the HTML spec —
+  backdrop-click-to-close is the one bit added manually (checking `e.target === dialogRef.current`
+  in the dialog's own `onClick`).
+- The "دسته‌بندی‌ها (N)" toolbar button opens a second `<dialog>` for managing the classification
+  category list: add/remove chips, reset to defaults. This list is **not** the same as invoice row
+  state — it's stored in `localStorage` under `CATEGORIES_STORAGE_KEY` (`lib/categories.ts`) so it
+  survives page reloads, and it's sent as `categories` on every `/api/classify` call (see below).
+  Categories are loaded from `localStorage` in a `useEffect` (not the initial `useState`) to avoid
+  a server/client hydration mismatch, since `localStorage` isn't available during SSR.
 
 ## API contracts
 
@@ -69,10 +85,23 @@ Success (`200`):
     "totalAmount": "number | null",
     "currency": "string | null",
     "vatAmount": "number | null",
+    "transactionType": "string | null",
+    "description": "string | null",
+    "debitAmount": "number | null",
+    "creditAmount": "number | null",
+    "balance": "number | null",
+    "accountName": "string | null",
+    "accountNumber": "string | null",
+    "sortCode": "string | null",
     "rawText": "string (first 2000 chars of the Tesseract.js OCR output)"
   }
 }
 ```
+
+`transactionType`/`description`/`debitAmount`/`creditAmount`/`balance`/`accountName`/`accountNumber`/
+`sortCode` are bank-statement-style fields, added alongside the original invoice fields so the same
+pipeline covers both invoice photos and bank-statement line images — whichever fields don't apply to
+the scanned document come back `null` rather than being guessed.
 
 Failure (`400`/`500`): `{ "error": "<Persian message>" }`. Known cases: no file, malformed
 request body (not multipart), a PDF upload (Tesseract.js doesn't support PDF — the client-side
@@ -100,12 +129,15 @@ Implementation notes:
 
 Request: `application/json`
 ```json
-{ "vendorName": "string?", "totalAmount": "number?", "currency": "string?", "invoiceNumber": "string?", "rawText": "string?" }
+{ "vendorName": "string?", "totalAmount": "number?", "currency": "string?", "invoiceNumber": "string?", "rawText": "string?", "categories": "string[]?" }
 ```
+
+`categories` is the user-editable category list from the UI's "دسته‌بندی‌ها" panel (see below);
+if omitted or empty the route falls back to `DEFAULT_CATEGORIES` from `lib/categories.ts`.
 
 Success (`200`):
 ```json
-{ "success": true, "data": { "category": "<one of CATEGORIES>", "confidence": 0 } }
+{ "success": true, "data": { "category": "<one of the requested categories>", "confidence": 0 } }
 ```
 
 Failure (`500`): `{ "error": "<Persian message>" }`. Known cases: missing `OPENROUTER_API_KEY`,
@@ -114,11 +146,14 @@ non-OK response from OpenRouter (message includes a hint to check
 being parseable JSON after stripping ` ```json ` fences (raw content is included in the error
 body for debugging).
 
-Fixed category list (`CATEGORIES` in `app/api/classify/route.ts`): Office Supplies, Travel,
-Meals & Entertainment, Equipment, Repairs & Maintenance, Software & Subscriptions, Utilities,
-Professional Services, Marketing, Rent, Other. The prompt instructs the model to pick exactly one
-and return raw JSON only — there is no server-side validation that the returned `category` is
-actually in this list, so a misbehaving model could return an out-of-list value un-caught.
+Category list: no longer hardcoded server-side — `lib/categories.ts` exports `DEFAULT_CATEGORIES`
+(seeded with a UK-accounting-style chart-of-accounts list: Accountancy Fees, Advertising and PR,
+Amortisation of Goodwill, etc.) used both as the client's initial category set and the server's
+fallback when a request omits `categories`. The client persists its working list to
+`localStorage` (key in `CATEGORIES_STORAGE_KEY`) and sends it with every `/api/classify` call. The
+prompt instructs the model to pick exactly one from whatever list it's given and return raw JSON
+only — there is still no server-side validation that the returned `category` is actually in that
+list, so a misbehaving model could return an out-of-list value un-caught.
 
 ## Error-handling policy
 

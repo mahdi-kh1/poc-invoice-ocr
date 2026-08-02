@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ClassifyResult } from "@/lib/types";
+import { DEFAULT_CATEGORIES } from "@/lib/categories";
 
 export const runtime = "nodejs";
-
-const CATEGORIES = [
-  "Office Supplies",
-  "Travel",
-  "Meals & Entertainment",
-  "Equipment",
-  "Repairs & Maintenance",
-  "Software & Subscriptions",
-  "Utilities",
-  "Professional Services",
-  "Marketing",
-  "Rent",
-  "Other",
-];
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { vendorName, totalAmount, currency, invoiceNumber, rawText } = body;
+    const { vendorName, totalAmount, currency, invoiceNumber, rawText, categories } = body;
+
+    const categoryList: string[] =
+      Array.isArray(categories) && categories.length > 0
+        ? categories.filter((c: unknown) => typeof c === "string" && c.trim().length > 0)
+        : DEFAULT_CATEGORIES;
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
@@ -33,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = `You are an accounting assistant. Based on the following invoice data, classify the expense into EXACTLY ONE category from this list:
-${CATEGORIES.join(", ")}
+${categoryList.join(", ")}
 
 Vendor: ${vendorName || "unknown"}
 Total Amount: ${totalAmount ?? "unknown"} ${currency || ""}
