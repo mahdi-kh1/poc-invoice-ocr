@@ -19,15 +19,16 @@ OCR and vice versa.
 ## System diagram
 
 ```
-┌─────────────┐   multipart/form-data    ┌──────────────────┐
+┌─────────────┐  multipart/form-data     ┌──────────────────┐
 │  page.tsx   │ ───────────────────────► │  /api/ocr         │──┐
-│ (client)    │                          │  (route.ts)       │  │ image buffer
-│             │ ◄─── {vendorName, ... } ─│                    │  ▼
-│  row state  │                          │                    │  Tesseract.js worker
-│  per file   │                          │                    │  (local, eng) → raw text
-│             │                          │                    │──┐
-│             │                          └──────────────────┘  │ field-extraction prompt
-│             │        JSON                    ┌──────────────────┐
+│ (client)    │  (image, or PDF —        │  (route.ts)       │  │ image or PDF buffer
+│             │   rasterized per page)   │                    │  ▼
+│             │ ◄── [{vendorName,…},…] ──│                    │  pdfjs-dist rasterize (PDF only)
+│  row state  │      (one array entry    │                    │  → Tesseract.js worker (local, eng)
+│  per file,  │       per receipt found) │                    │    → raw text per page
+│  fanned out │                          │                    │──┐
+│  1-file→N   │                          └──────────────────┘  │ field-extraction prompt (→ array)
+│  rows       │        JSON                    ┌──────────────────┐
 │             │ ───────────────────────────────►│  /api/classify    │──┐
 │             │ ◄─── {category, confidence} ────│  (route.ts)        │  │ chat/completions
 └─────────────┘                                 └──────────────────┘  ▼
@@ -53,13 +54,28 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
 
 ## Row detail modal, categories panel & help dialog (`app/page.tsx`)
 
-- Clicking "View" on a row opens a native `<dialog>` (`detailDialogRef`, `showModal()`/`close()`
-  driven by `selectedRowId` state) showing every extracted field (`DETAIL_FIELDS`) plus an image
-  preview built from the row's original `File` via `URL.createObjectURL` (revoked on close/row
-  change). Native `<dialog>` was chosen over a hand-rolled overlay because it gets focus trapping,
-  Escape-to-close, and focus restoration to the trigger element for free per the HTML spec —
-  backdrop-click-to-close is the one bit added manually (checking `e.target === dialogRef.current`
-  in the dialog's own `onClick`).
+- Clicking "View" (or "Show Error", for a row that has one) on a row opens a native `<dialog>`
+  (`detailDialogRef`, `showModal()`/`close()` driven by `selectedRowId` state) showing every
+  extracted field (`DETAIL_FIELDS`) plus an image/PDF preview built from the row's original `File`
+  via `URL.createObjectURL` (revoked on close/row change). PDFs render via an `<iframe>` (the
+  browser's native PDF viewer) instead of `<img>`, with a `#page=N` fragment appended from the
+  row's `pageNumber` so it opens on the right page. Native `<dialog>` was chosen over a hand-rolled
+  overlay because it gets focus trapping, Escape-to-close, and focus restoration to the trigger
+  element for free per the HTML spec — backdrop-click-to-close is the one bit added manually
+  (checking `e.target === dialogRef.current` in the dialog's own `onClick`).
+- **Error display**: the table's Error column is a "Show Error" button (only rendered when
+  `row.error` is set), not the raw error text — long messages used to be silently truncated by
+  `.cell-truncate`. The button opens the same detail dialog, which renders the full message in a
+  `.dialog-error-banner` above the field grid.
+- **Editable fields**: once a row has an OCR result and isn't actively being processed
+  (`EDITABLE_STATUSES = ["ocr_done", "ocr_error", "classify_done", "classify_error"]`), every
+  `DETAIL_FIELDS` entry except `category`/`confidence`/`pageNumber` (marked `editable: false` —
+  they're classification output or structural metadata, not something to hand-correct) renders as
+  an `<input>` instead of static text. `handleDetailFieldChange` writes straight into row state via
+  `updateRow`, so edits are picked up by `runClassify()` on the next Step 2 run — the intended flow
+  is: run OCR, open a row, fill in whatever Tesseract/the LLM missed, then classify. Empty/`null`
+  fields get a `.detail-input-empty` highlight (amber border) so gaps are easy to spot before
+  classifying. There's no persistence beyond in-memory row state, same as everything else here.
 - The "Categories (N)" toolbar button opens a second `<dialog>` for managing the classification
   category list: add/remove chips, reset to defaults. This list is **not** the same as invoice row
   state — it's stored in `localStorage` under `CATEGORIES_STORAGE_KEY` (`lib/categories.ts`) so it
@@ -74,35 +90,39 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
 
 ### `POST /api/ocr`
 
-Request: `multipart/form-data`, single field `file` (image only — PDF is rejected with a
-friendly error, see below).
+Request: `multipart/form-data`, single field `file` — an image, or a PDF (each page is rasterized
+to an image before OCR).
 
-Success (`200`):
+Success (`200`) — **`data` is always an array**, even for a single-page image with one receipt on
+it, because a page/photo can contain more than one receipt:
 ```json
 {
   "success": true,
-  "data": {
-    "vendorName": "string | null",
-    "invoiceNumber": "string | null",
-    "invoiceDate": "string | null",
-    "totalAmount": "number | null",
-    "currency": "string | null",
-    "vatAmount": "number | null",
-    "transactionType": "string | null",
-    "description": "string | null",
-    "debitAmount": "number | null",
-    "creditAmount": "number | null",
-    "balance": "number | null",
-    "accountName": "string | null",
-    "accountNumber": "string | null",
-    "sortCode": "string | null",
-    "vatNumber": "string | null",
-    "merchantAddress": "string | null",
-    "paymentMethod": "string | null",
-    "subtotal": "number | null",
-    "receiptTime": "string | null",
-    "rawText": "string (first 2000 chars of the Tesseract.js OCR output)"
-  }
+  "data": [
+    {
+      "vendorName": "string | null",
+      "invoiceNumber": "string | null",
+      "invoiceDate": "string | null",
+      "totalAmount": "number | null",
+      "currency": "string | null",
+      "vatAmount": "number | null",
+      "transactionType": "string | null",
+      "description": "string | null",
+      "debitAmount": "number | null",
+      "creditAmount": "number | null",
+      "balance": "number | null",
+      "accountName": "string | null",
+      "accountNumber": "string | null",
+      "sortCode": "string | null",
+      "vatNumber": "string | null",
+      "merchantAddress": "string | null",
+      "paymentMethod": "string | null",
+      "subtotal": "number | null",
+      "receiptTime": "string | null",
+      "rawText": "string (first 2000 chars of that page's Tesseract.js OCR output)",
+      "pageNumber": "number | null (1-based PDF page, or null for a plain image upload)"
+    }
+  ]
 }
 ```
 
@@ -112,26 +132,38 @@ Success (`200`):
 fields so the same pipeline covers invoice photos, UK receipts, and bank-statement line images —
 whichever fields don't apply to the scanned document come back `null` rather than being guessed.
 
-Failure (`400`/`500`): `{ "error": "<message>" }`. Known cases: no file, malformed
-request body (not multipart), a PDF upload (Tesseract.js doesn't support PDF — the client-side
-`accept` still allows `.pdf` for now, but the route rejects it),
-missing `OPENROUTER_API_KEY` (required — it powers field extraction, not just classification),
-Tesseract producing empty text (blurry/corrupt image), or the field-extraction LLM call failing /
-returning unparseable JSON.
+`app/page.tsx` fans a multi-entry response out into multiple table rows (`expandRow`) rather than
+concatenating fields — see the row detail modal section above.
+
+Failure (`400`/`500`): `{ "error": "<message>" }`. Known cases: no file, malformed request body
+(not multipart), a PDF with more pages than `MAX_PDF_PAGES` (15) or that pdfjs-dist can't parse
+(corrupted/password-protected), missing `OPENROUTER_API_KEY` (required — it powers field
+extraction, not just classification), Tesseract producing empty text on every page (blurry/corrupt
+scan), or the field-extraction LLM call failing / returning unparseable JSON.
 
 Implementation notes:
-- OCR is fully local: a Tesseract.js worker is created per request with `langs: ["eng"]`,
-  trained-data cached under `.tesseract-cache/` (gitignored) via the `cachePath` option, and
-  terminated after `recognize()` returns — no external OCR service, no signup, no card required.
+- PDF pages are rasterized with `pdfjs-dist` (`legacy/build/pdf.mjs`, dynamically imported with a
+  **literal** specifier — see the `next.config.js` note in CLAUDE.md) using its Node-auto-selected
+  canvas factory, which is backed by `@napi-rs/canvas` (no native-build/`node-canvas` dependency).
+  `renderPdfToPageImages` throws before OCR'ing anything if `doc.numPages > MAX_PDF_PAGES` (15), to
+  bound per-request cost — each page triggers its own OCR pass plus LLM call downstream.
+- OCR is fully local: **one** Tesseract.js worker is created per request (reused across all pages
+  of a multi-page PDF) with `langs: ["eng"]`, trained-data cached under `.tesseract-cache/`
+  (gitignored) via the `cachePath` option, and terminated after every page has been processed — no
+  external OCR service, no signup, no card required.
 - Tesseract only returns raw text, no structured fields — there's no field-unwrapping helper.
-  Instead, the raw text is sent to the OpenRouter chat model (`extractFields` in `route.ts`) with a
-  prompt asking for `vendorName`/`invoiceNumber`/etc. as raw JSON, parsed the same way
-  `/api/classify` parses its response (strip ```json fences, then `JSON.parse`).
-  `toStringOrNull`/`toNumberOrNull` coerce the LLM's (untrusted) field types before they're
-  returned to the client.
+  Instead, each page's raw text is sent to the OpenRouter chat model (`extractReceipts` in
+  `route.ts`) with a prompt asking for a JSON **array** of `{vendorName, invoiceNumber, ...}`
+  objects — one per distinct receipt the model finds in that page's text — parsed the same way
+  `/api/classify` parses its response (strip ```json fences, then `JSON.parse`; a bare object
+  response is wrapped in a 1-element array as a defensive fallback in case the model ignores the
+  array instruction). `toStringOrNull`/`toNumberOrNull` coerce the LLM's (untrusted) field types
+  before `buildExtractedData` returns them to the client.
 - Because field extraction now goes through an LLM instead of a purpose-built invoice model,
   accuracy depends more on OCR text quality and prompt wording than before — worth watching when
-  evaluating this stage's feasibility.
+  evaluating this stage's feasibility. Multi-receipt splitting adds another accuracy axis: the
+  model can still merge or mis-split receipts on a cluttered page, especially with a lot of OCR
+  noise.
 
 ### `POST /api/classify`
 
@@ -171,6 +203,13 @@ network traffic, never sees a bare Next.js crash page or an English stack trace.
 failure paths, match this: catch close to the operation that can fail, translate to a specific
 English message, don't let anything bubble to an unguarded top-level throw.
 
+This guarantee only covers responses that actually reach our route handlers — a dev server mid
+hot-reload/recompile, or a broken build, can still make Next itself serve an HTML error overlay
+for the request. `app/page.tsx`'s `parseApiResponse` guards both `fetch` call sites against this:
+it reads the body as text and only then attempts `JSON.parse`, so a non-JSON response surfaces as
+"Server returned a non-JSON response (HTTP …)" instead of the cryptic
+`Unexpected token '<' ... is not valid JSON` that a bare `res.json()` throws on an HTML body.
+
 ## Configuration
 
 | Var | Consumed by | Notes |
@@ -184,13 +223,20 @@ keys configured yet) — not an exceptional crash. Tesseract.js needs no API key
 ## Known limitations / explicitly out of scope
 
 - No auth, no rate limiting, no per-file size/type validation beyond the browser's `accept`
-  attribute (which still lists `.pdf` even though `/api/ocr` rejects PDFs — revisit if PDF support
-  is added, e.g. via a `pdfjs-dist` rasterization step before handing pages to Tesseract).
-- No persistence layer — results exist only in browser memory for the session.
-- Sequential (not parallel/batched) processing of rows; fine for POC-scale test batches, would
-  need reworking for volume. Each `/api/ocr` call also creates and terminates its own Tesseract
-  worker rather than reusing one across requests — simplest correct thing for sequential POC
-  usage, but adds per-request startup overhead if this ever needs to run in a hot loop.
+  attribute and the server-side `MAX_PDF_PAGES` cap.
+- PDF pages are rasterized at a fixed `scale: 2.0` in `renderPdfToPageImages` — no attempt to
+  adapt resolution to page size/DPI, so very large or very small page geometries may OCR worse
+  than a typically-sized scanned page.
+- Multi-receipt detection depends entirely on the LLM correctly splitting OCR text that has no
+  structural markers between receipts — there's no image-level segmentation (e.g. detecting
+  physical receipt boundaries before OCR), so accuracy degrades on cluttered or overlapping scans.
+- No persistence layer — results exist only in browser memory for the session; row edits made in
+  the detail modal are lost on refresh just like everything else.
+- Sequential (not parallel/batched) processing of rows and PDF pages; fine for POC-scale test
+  batches, would need reworking for volume. Each `/api/ocr` call creates and terminates one
+  Tesseract worker (reused across all pages of a single request, but not across requests) —
+  simplest correct thing for sequential POC usage, but adds per-request startup overhead if this
+  ever needs to run in a hot loop.
 - Next.js is pinned to 14.x; several `npm audit` "high" advisories only have fixes in Next 16
   (SSRF/cache-poisoning classes relevant to self-hosted production deployments) — acceptable
   because this only ever runs on `localhost`. Revisit before any non-local deployment.

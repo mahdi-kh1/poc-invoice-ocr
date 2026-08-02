@@ -254,6 +254,16 @@ input:focus-visible,
   background: var(--danger-bg);
 }
 
+.btn-danger {
+  border-color: rgba(251, 113, 133, 0.35);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(251, 113, 133, 0.2);
+  border-color: var(--danger);
+}
+
 /* Table */
 .table-wrap {
   overflow-x: auto;
@@ -316,11 +326,6 @@ tbody tr:last-child td {
 .cell-num {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.cell-error {
-  color: var(--danger);
-  max-width: 220px;
 }
 
 .empty-row td {
@@ -450,6 +455,20 @@ dialog[open] {
   min-width: 0;
 }
 
+.dialog-error-banner {
+  margin: 16px 20px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  border: 1px solid rgba(251, 113, 133, 0.3);
+  color: var(--danger);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  flex-shrink: 0;
+}
+
 .dialog-content {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -525,6 +544,41 @@ dialog[open] {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.detail-row-editable {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.detail-row-editable dd {
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
+}
+
+.detail-edit-hint {
+  margin: -2px 0 2px;
+  font-size: 0.78rem;
+}
+
+.detail-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.detail-input::placeholder {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+}
+.detail-input-empty {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.07);
 }
 
 @media (max-width: 640px) {

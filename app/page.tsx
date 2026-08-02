@@ -47,12 +47,12 @@ const STATUS_LABELS: Record<RowStatus, string> = {
   classify_error: "Classification Error",
 };
 
-const DETAIL_FIELDS: { key: keyof InvoiceRow; label: string; numeric?: boolean }[] = [
+const DETAIL_FIELDS: { key: keyof InvoiceRow; label: string; numeric?: boolean; editable?: boolean }[] = [
   { key: "vendorName", label: "Vendor" },
   { key: "invoiceNumber", label: "Invoice Number" },
   { key: "invoiceDate", label: "Invoice Date" },
   { key: "receiptTime", label: "Receipt Time" },
-  { key: "pageNumber", label: "PDF Page" },
+  { key: "pageNumber", label: "PDF Page", editable: false },
   { key: "totalAmount", label: "Total Amount", numeric: true },
   { key: "subtotal", label: "Subtotal (before VAT)", numeric: true },
   { key: "currency", label: "Currency" },
@@ -68,9 +68,13 @@ const DETAIL_FIELDS: { key: keyof InvoiceRow; label: string; numeric?: boolean }
   { key: "accountName", label: "Account Name" },
   { key: "accountNumber", label: "Account Number" },
   { key: "sortCode", label: "Sort Code" },
-  { key: "category", label: "Category" },
-  { key: "confidence", label: "Confidence", numeric: true },
+  { key: "category", label: "Category", editable: false },
+  { key: "confidence", label: "Confidence", numeric: true, editable: false },
 ];
+
+// Editing is allowed once OCR has produced a result and nothing is actively running — this is
+// the window where the user should review/fill in missing fields before Step 2 classifies them.
+const EDITABLE_STATUSES: RowStatus[] = ["ocr_done", "ocr_error", "classify_done", "classify_error"];
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
@@ -83,6 +87,21 @@ function formatDetailValue(key: keyof InvoiceRow, value: unknown): string {
   if (key === "confidence") return `${value}%`;
   if (typeof value === "number") return formatNumber(value);
   return String(value);
+}
+
+// API routes always respond with JSON, but if the dev server is mid-recompile (or a broken
+// build/proxy sits in front of it) it can serve an HTML error page instead — parsing that as
+// JSON throws the cryptic "Unexpected token '<' ... is not valid JSON". Surface something
+// diagnosable instead.
+async function parseApiResponse(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Server returned a non-JSON response (HTTP ${res.status}). The dev server may still be (re)compiling — wait a moment and retry, or check the terminal running "npm run dev" for the actual error.`
+    );
+  }
 }
 
 export default function Home() {
@@ -188,6 +207,15 @@ export default function Home() {
     setRows((prev) => prev.flatMap((r) => (r.id === id ? replacements : [r])));
   }
 
+  function handleDetailFieldChange(rowId: string, key: keyof InvoiceRow, numeric: boolean | undefined, raw: string) {
+    if (numeric) {
+      const n = raw.trim() === "" ? null : Number(raw);
+      updateRow(rowId, { [key]: raw.trim() === "" || !Number.isFinite(n) ? null : n } as Partial<InvoiceRow>);
+    } else {
+      updateRow(rowId, { [key]: raw === "" ? null : raw } as Partial<InvoiceRow>);
+    }
+  }
+
   async function runOCR() {
     setBusy(true);
     const targets = rows.filter((r) => r.status === "pending");
@@ -197,7 +225,7 @@ export default function Home() {
         const fd = new FormData();
         fd.append("file", row.file);
         const res = await fetch("/api/ocr", { method: "POST", body: fd });
-        const json = await res.json();
+        const json = await parseApiResponse(res);
         if (!res.ok || !json.success) {
           throw new Error(json.error || "OCR failed");
         }
@@ -260,7 +288,7 @@ export default function Home() {
             categories,
           }),
         });
-        const json = await res.json();
+        const json = await parseApiResponse(res);
         if (!res.ok || !json.success) {
           throw new Error(json.error || "Classification failed");
         }
@@ -435,8 +463,12 @@ export default function Home() {
                     View
                   </button>
                 </td>
-                <td className="cell-truncate cell-error" title={r.error}>
-                  {r.error}
+                <td>
+                  {r.error && (
+                    <button className="btn btn-small btn-danger" onClick={() => setSelectedRowId(r.id)}>
+                      Show Error
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -473,6 +505,11 @@ export default function Home() {
                 ×
               </button>
             </div>
+            {selectedRow.error && (
+              <div className="dialog-error-banner" role="alert">
+                <strong>Error:</strong> {selectedRow.error}
+              </div>
+            )}
             <div className="dialog-content">
               <div className="dialog-image-wrap">
                 {previewUrl && selectedRow.file.type === "application/pdf" ? (
@@ -496,20 +533,37 @@ export default function Home() {
                     </span>
                   </dd>
                 </div>
-                {DETAIL_FIELDS.map((f) => (
-                  <div className="detail-row" key={f.key}>
-                    <dt>{f.label}</dt>
-                    <dd className={f.numeric ? "cell-num" : undefined}>
-                      {formatDetailValue(f.key, selectedRow[f.key])}
-                    </dd>
-                  </div>
-                ))}
-                {selectedRow.error && (
-                  <div className="detail-row">
-                    <dt>Error</dt>
-                    <dd className="cell-error">{selectedRow.error}</dd>
-                  </div>
+                {EDITABLE_STATUSES.includes(selectedRow.status) && (
+                  <p className="app-subtitle detail-edit-hint">
+                    Fields are editable — fill in anything OCR missed before running Step 2 for more
+                    accurate classification.
+                  </p>
                 )}
+                {DETAIL_FIELDS.map((f) => {
+                  const canEdit = f.editable !== false && EDITABLE_STATUSES.includes(selectedRow.status);
+                  const value = selectedRow[f.key];
+                  const isEmpty = value === undefined || value === null || value === "";
+                  return (
+                    <div className={`detail-row${canEdit ? " detail-row-editable" : ""}`} key={f.key}>
+                      <dt>{f.label}</dt>
+                      <dd className={f.numeric ? "cell-num" : undefined}>
+                        {canEdit ? (
+                          <input
+                            type={f.numeric ? "number" : "text"}
+                            className={`detail-input${isEmpty ? " detail-input-empty" : ""}`}
+                            value={value === undefined || value === null ? "" : String(value)}
+                            placeholder="Not extracted — fill in manually"
+                            onChange={(e) =>
+                              handleDetailFieldChange(selectedRow.id, f.key, f.numeric, e.target.value)
+                            }
+                          />
+                        ) : (
+                          formatDetailValue(f.key, value)
+                        )}
+                      </dd>
+                    </div>
+                  );
+                })}
               </dl>
             </div>
           </div>

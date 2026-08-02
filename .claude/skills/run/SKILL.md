@@ -17,8 +17,8 @@ This is a Next.js 14 App Router app (see [CLAUDE.md](../../../CLAUDE.md) and
    ```
 
 2. **Ensure env file exists.** The app reads `.env.local` (not `.env.example`) and must not crash
-   without it — missing keys should surface as friendly Persian errors in the UI/API responses,
-   not as a server crash. If `.env.local` is missing, create it from the template so the server
+   without it — missing keys should surface as friendly English error JSON from the API routes
+   (never a server crash). If `.env.local` is missing, create it from the template so the server
    has something to read:
    ```bash
    cp .env.example .env.local
@@ -42,9 +42,14 @@ This is a Next.js 14 App Router app (see [CLAUDE.md](../../../CLAUDE.md) and
    ```
    Expect `200`. Optionally also sanity-check the API routes degrade cleanly without keys:
    ```bash
-   curl -s -X POST http://localhost:<port>/api/ocr        # expect a Persian error JSON, not a crash
+   curl -s -X POST http://localhost:<port>/api/ocr        # expect an English error JSON, not a crash
    curl -s -X POST http://localhost:<port>/api/classify -H "Content-Type: application/json" -d '{}'
    ```
+   `/api/ocr` accepts both images and PDFs (each PDF page is rasterized via `pdfjs-dist` +
+   `@napi-rs/canvas` before OCR — see CLAUDE.md/design.md). If `OPENROUTER_API_KEY` is actually set
+   and you want to exercise the real pipeline, POST a real image/PDF with `-F "file=@some.pdf"` and
+   confirm the response is `{"success": true, "data": [...]}` — `data` is always an array now (one
+   entry per receipt found, possibly more than one per page).
 
 5. Report the URL the server is listening on. Next.js only reads `.env.local` at process start —
    if env vars were edited after the server was already running, restart it.
