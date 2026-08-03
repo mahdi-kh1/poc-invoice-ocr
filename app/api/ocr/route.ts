@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createWorker, type Worker } from "tesseract.js";
+import { loadImage, createCanvas } from "@napi-rs/canvas";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -185,8 +186,28 @@ ${rawText.slice(0, 6000)}
   return list.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
 }
 
+// Full-resolution photos/screenshots (easily 3000px+ on a side) make Tesseract dramatically
+// slower without improving accuracy — printed text is legible to OCR well below this cap. This
+// also protects against Vercel's function timeout, which not even `maxDuration = 60` can raise
+// past on Hobby, and a slow/underpowered function is exactly what turned into a 504 there.
+const MAX_OCR_DIMENSION = 2000;
+
+async function downscaleForOcr(buffer: Buffer): Promise<Buffer> {
+  const img = await loadImage(buffer);
+  const longestSide = Math.max(img.width, img.height);
+  if (longestSide <= MAX_OCR_DIMENSION) return buffer;
+
+  const scale = MAX_OCR_DIMENSION / longestSide;
+  const width = Math.round(img.width * scale);
+  const height = Math.round(img.height * scale);
+  const canvas = createCanvas(width, height);
+  canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+  return canvas.toBuffer("image/png");
+}
+
 async function recognizeText(worker: Worker, imageBuffer: Buffer): Promise<string> {
-  const { data } = await worker.recognize(imageBuffer);
+  const ocrReadyImage = await downscaleForOcr(imageBuffer);
+  const { data } = await worker.recognize(ocrReadyImage);
   return data.text || "";
 }
 

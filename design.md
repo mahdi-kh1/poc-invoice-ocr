@@ -243,6 +243,13 @@ constrains anything the API routes do:
   same Amazon Linux target as the function runtime, so `npm install` during the Vercel build picks
   the matching prebuild automatically — no extra config needed, but worth knowing if a future
   dependency doesn't publish a Linux prebuild.
+- Even after fixing the crash above, a full-resolution desktop screenshot (easily 3000px+ on a
+  side) still hit a 504 — Vercel's Hobby-tier CPU allocation is modest, and Tesseract's OCR time
+  scales with pixel count, not just file size. `recognizeText` now downscales any image (photo,
+  screenshot, or rendered PDF page) to `MAX_OCR_DIMENSION` (2000px on the longest side) before
+  handing it to Tesseract — see the note by that constant in `route.ts` for the accuracy trade-off.
+  If a 60s timeout is still hit on some input, the next lever is Vercel Pro's higher function
+  memory (which raises allocated CPU), not a code change.
 
 ## Known limitations / explicitly out of scope
 
@@ -250,7 +257,10 @@ constrains anything the API routes do:
   attribute and the server-side `MAX_PDF_PAGES` cap.
 - PDF pages are rasterized at a fixed `scale: 2.0` in `renderPdfToPageImages` — no attempt to
   adapt resolution to page size/DPI, so very large or very small page geometries may OCR worse
-  than a typically-sized scanned page.
+  than a typically-sized scanned page. Both that and any oversized plain-image upload are then
+  capped at `MAX_OCR_DIMENSION` (2000px longest side, see Deployment section above) before OCR —
+  a deliberate speed/timeout trade-off that could theoretically lose some detail on a very
+  high-resolution, densely-printed source document.
 - Multi-receipt detection depends entirely on the LLM correctly splitting OCR text that has no
   structural markers between receipts — there's no image-level segmentation (e.g. detecting
   physical receipt boundaries before OCR), so accuracy degrades on cluttered or overlapping scans.

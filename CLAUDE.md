@@ -58,7 +58,10 @@ app/page.tsx ("use client")
 - **`app/api/ocr/route.ts`**: accepts `multipart/form-data` (field `file`, image **or PDF**). A PDF
   is rasterized page-by-page with `pdfjs-dist` + `@napi-rs/canvas` (capped at `MAX_PDF_PAGES`
   pages, currently 15) since Tesseract.js can't read PDF directly; a plain image is treated as one
-  page. Each page is run through a Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data
+  page. Every page/image is downscaled to `MAX_OCR_DIMENSION` (2000px longest side) before OCR —
+  full-resolution photos/screenshots make Tesseract dramatically slower without more accuracy, and
+  this also keeps requests inside Vercel's function timeout. Each page is then run through a
+  Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data
   cached under `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`,
   since serverless hosts like Vercel ship a read-only deployment bundle and only `/tmp` is
   writable there) to get raw OCR text, then that text is sent to the same OpenRouter chat model
