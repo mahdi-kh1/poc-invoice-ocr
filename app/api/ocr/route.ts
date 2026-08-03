@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createWorker, type Worker } from "tesseract.js";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { pathToFileURL } from "url";
 import type { OcrExtractedData } from "@/lib/types";
 
-const TESSERACT_CACHE_PATH = path.join(process.cwd(), ".tesseract-cache");
+// Must be under the OS temp dir, not process.cwd() — on Vercel (and most serverless hosts) the
+// deployment bundle is read-only and only /tmp is writable. Writing under cwd instead throws
+// EROFS/EACCES at import time (before any request handler runs), which crashes the whole
+// function and surfaces to the client as an HTML 500 page instead of a JSON error response.
+const TESSERACT_CACHE_PATH = path.join(os.tmpdir(), "poc-invoice-ocr-tesseract-cache");
 // tesseract.js's Node cache writer does a plain fs.writeFile with no mkdir, so the
 // trained-data cache silently never persists unless this directory already exists.
 fs.mkdirSync(TESSERACT_CACHE_PATH, { recursive: true });
@@ -15,6 +20,10 @@ fs.mkdirSync(TESSERACT_CACHE_PATH, { recursive: true });
 const MAX_PDF_PAGES = 15;
 
 export const runtime = "nodejs";
+// Tesseract + PDF rasterization + the OpenRouter round-trip can comfortably exceed Vercel's
+// default 10s function timeout, especially on a cold start (re-downloading trained-data into
+// /tmp, which doesn't persist across invocations there). 60s is the max selectable on Hobby.
+export const maxDuration = 60;
 
 function toStringOrNull(v: unknown): string | null {
   if (v === null || v === undefined) return null;

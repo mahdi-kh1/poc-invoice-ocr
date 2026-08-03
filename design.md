@@ -148,9 +148,15 @@ Implementation notes:
   `renderPdfToPageImages` throws before OCR'ing anything if `doc.numPages > MAX_PDF_PAGES` (15), to
   bound per-request cost — each page triggers its own OCR pass plus LLM call downstream.
 - OCR is fully local: **one** Tesseract.js worker is created per request (reused across all pages
-  of a multi-page PDF) with `langs: ["eng"]`, trained-data cached under `.tesseract-cache/`
-  (gitignored) via the `cachePath` option, and terminated after every page has been processed — no
-  external OCR service, no signup, no card required.
+  of a multi-page PDF) with `langs: ["eng"]`, trained-data cached under
+  `os.tmpdir()/poc-invoice-ocr-tesseract-cache` via the `cachePath` option, and terminated after
+  every page has been processed — no external OCR service, no signup, no card required. This used
+  to be a repo-relative `.tesseract-cache/` folder, which worked locally but crashed on Vercel: the
+  deployment bundle is read-only, so the `fs.mkdirSync` that pre-creates the cache dir threw at
+  module-import time (before the route's try/catch even exists), taking the whole function down
+  and returning an HTML 500 instead of a JSON error. `os.tmpdir()` is writable both locally and on
+  serverless hosts, at the cost of not persisting the cache across separate `next dev` restarts —
+  an acceptable trade for a POC.
 - Tesseract only returns raw text, no structured fields — there's no field-unwrapping helper.
   Instead, each page's raw text is sent to the OpenRouter chat model (`extractReceipts` in
   `route.ts`) with a prompt asking for a JSON **array** of `{vendorName, invoiceNumber, ...}`
@@ -220,6 +226,24 @@ it reads the body as text and only then attempts `JSON.parse`, so a non-JSON res
 Both routes treat a missing key as a normal, expected failure mode (POC users often won't have
 keys configured yet) — not an exceptional crash. Tesseract.js needs no API key or account at all.
 
+## Deployment (Vercel)
+
+This app is also deployed to Vercel (serverless Node functions), not just run locally — that
+constrains anything the API routes do:
+- `.env.local` isn't deployed; `OPENROUTER_API_KEY`/`OPENROUTER_MODEL` must be set as Vercel
+  Project → Settings → Environment Variables, and a redeploy is needed after changing them.
+- The deployment bundle is read-only; only `/tmp` is writable, and it isn't guaranteed to persist
+  between invocations. See the `TESSERACT_CACHE_PATH` note above — this bit Vercel specifically
+  (worked locally, crashed in prod) because the failure was a top-level `fs.mkdirSync` throwing at
+  module-import time, before the route handler's try/catch existed to catch it.
+- Both routes set `export const maxDuration` (`/api/ocr`: 60s, the Hobby-plan ceiling; `/api/classify`:
+  30s) since the default 10s is too tight for Tesseract + PDF rasterization + an OpenRouter call,
+  particularly on a cold start that has to re-download trained-data into the now-empty `/tmp`.
+- `@napi-rs/canvas` ships prebuilt native binaries per platform; Vercel's build step runs on the
+  same Amazon Linux target as the function runtime, so `npm install` during the Vercel build picks
+  the matching prebuild automatically — no extra config needed, but worth knowing if a future
+  dependency doesn't publish a Linux prebuild.
+
 ## Known limitations / explicitly out of scope
 
 - No auth, no rate limiting, no per-file size/type validation beyond the browser's `accept`
@@ -238,5 +262,6 @@ keys configured yet) — not an exceptional crash. Tesseract.js needs no API key
   simplest correct thing for sequential POC usage, but adds per-request startup overhead if this
   ever needs to run in a hot loop.
 - Next.js is pinned to 14.x; several `npm audit` "high" advisories only have fixes in Next 16
-  (SSRF/cache-poisoning classes relevant to self-hosted production deployments) — acceptable
-  because this only ever runs on `localhost`. Revisit before any non-local deployment.
+  (SSRF/cache-poisoning classes). This POC is deployed to Vercel now, not just `localhost` — this
+  hasn't been revisited against that, and should be before treating the Vercel deployment as
+  anything more than a convenience demo link.

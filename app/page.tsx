@@ -112,6 +112,16 @@ export default function Home() {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [magnifier, setMagnifier] = useState<{
+    x: number;
+    y: number;
+    bgWidth: number;
+    bgHeight: number;
+    bgX: number;
+    bgY: number;
+  } | null>(null);
+  const imageWrapRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const fileInputId = useId();
   const newCategoryId = useId();
   const detailDialogRef = useRef<HTMLDialogElement>(null);
@@ -177,6 +187,8 @@ export default function Home() {
 
   useEffect(() => {
     setPreviewZoom(1);
+    setMagnifier(null);
+    dragState.current = null;
     if (!selectedRow) {
       setPreviewUrl(null);
       return;
@@ -186,6 +198,52 @@ export default function Home() {
     return () => URL.revokeObjectURL(url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRow?.id]);
+
+  const MAGNIFIER_SIZE = 180;
+  const MAGNIFIER_FACTOR = 2.5;
+
+  // At fit-to-container zoom, hovering shows a magnifier lens (better for spot-checking small
+  // print than the old scale-and-scroll zoom). Once actually zoomed in, drag-to-pan takes over
+  // instead (see handleImageWrapMouseDown) — the two tools don't overlap.
+  function handleImageMouseMove(e: React.MouseEvent<HTMLImageElement>) {
+    if (previewZoom !== 1) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+    setMagnifier({
+      x: e.clientX,
+      y: e.clientY,
+      bgWidth: rect.width * MAGNIFIER_FACTOR,
+      bgHeight: rect.height * MAGNIFIER_FACTOR,
+      bgX: -(relX * MAGNIFIER_FACTOR - MAGNIFIER_SIZE / 2),
+      bgY: -(relY * MAGNIFIER_FACTOR - MAGNIFIER_SIZE / 2),
+    });
+  }
+
+  function handleImageMouseLeave() {
+    setMagnifier(null);
+  }
+
+  function handleImageWrapMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (previewZoom <= 1) return;
+    const wrap = imageWrapRef.current;
+    if (!wrap) return;
+    dragState.current = { startX: e.clientX, startY: e.clientY, scrollLeft: wrap.scrollLeft, scrollTop: wrap.scrollTop };
+    wrap.classList.add("dialog-image-wrap-dragging");
+  }
+
+  function handleImageWrapMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const drag = dragState.current;
+    const wrap = imageWrapRef.current;
+    if (!drag || !wrap) return;
+    wrap.scrollLeft = drag.scrollLeft - (e.clientX - drag.startX);
+    wrap.scrollTop = drag.scrollTop - (e.clientY - drag.startY);
+  }
+
+  function endImageWrapDrag() {
+    dragState.current = null;
+    imageWrapRef.current?.classList.remove("dialog-image-wrap-dragging");
+  }
 
   // Native <dialog> "light dismiss": e.target === dialog is the commonly-cited trick, but it can
   // fail to fire depending on how the dialog's content fills its box — checking the click's
@@ -523,7 +581,14 @@ export default function Home() {
             )}
             <div className="dialog-content">
               <div className="dialog-image-panel">
-                <div className={`dialog-image-wrap${previewZoom > 1 ? " dialog-image-wrap-zoomed" : ""}`}>
+                <div
+                  ref={imageWrapRef}
+                  className={`dialog-image-wrap${previewZoom > 1 ? " dialog-image-wrap-zoomed" : ""}`}
+                  onMouseDown={handleImageWrapMouseDown}
+                  onMouseMove={handleImageWrapMouseMove}
+                  onMouseUp={endImageWrapDrag}
+                  onMouseLeave={endImageWrapDrag}
+                >
                   {previewUrl && selectedRow.file.type === "application/pdf" ? (
                     <iframe
                       src={`${previewUrl}${selectedRow.pageNumber ? `#page=${selectedRow.pageNumber}` : ""}`}
@@ -536,40 +601,61 @@ export default function Home() {
                       alt={`Receipt image for ${selectedRow.filename}`}
                       className="dialog-image"
                       style={previewZoom > 1 ? { width: `${previewZoom * 100}%`, maxWidth: "none" } : undefined}
+                      onMouseMove={handleImageMouseMove}
+                      onMouseLeave={handleImageMouseLeave}
                     />
                   ) : (
                     <div className="dialog-image-placeholder">Preview not available</div>
                   )}
                 </div>
                 {previewUrl && selectedRow.file.type !== "application/pdf" && (
-                  <div className="dialog-zoom-toolbar">
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      aria-label="Zoom out"
-                      onClick={() => setPreviewZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-                      disabled={previewZoom <= 0.5}
-                    >
-                      −
-                    </button>
-                    <span className="dialog-zoom-level">{Math.round(previewZoom * 100)}%</span>
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      aria-label="Zoom in"
-                      onClick={() => setPreviewZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
-                      disabled={previewZoom >= 4}
-                    >
-                      +
-                    </button>
-                    {previewZoom !== 1 && (
-                      <button type="button" className="btn btn-small" onClick={() => setPreviewZoom(1)}>
-                        Reset
+                  <>
+                    <div className="dialog-zoom-toolbar">
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        aria-label="Zoom out"
+                        onClick={() => setPreviewZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                        disabled={previewZoom <= 0.5}
+                      >
+                        −
                       </button>
-                    )}
-                  </div>
+                      <span className="dialog-zoom-level">{Math.round(previewZoom * 100)}%</span>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        aria-label="Zoom in"
+                        onClick={() => setPreviewZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
+                        disabled={previewZoom >= 4}
+                      >
+                        +
+                      </button>
+                      {previewZoom !== 1 && (
+                        <button type="button" className="btn btn-small" onClick={() => setPreviewZoom(1)}>
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <p className="dialog-zoom-hint">
+                      {previewZoom === 1 ? "Hover the image to magnify" : "Drag the image to pan around"}
+                    </p>
+                  </>
                 )}
               </div>
+              {magnifier && (
+                <div
+                  className="dialog-magnifier"
+                  style={{
+                    left: magnifier.x - MAGNIFIER_SIZE / 2,
+                    top: magnifier.y - MAGNIFIER_SIZE / 2,
+                    width: MAGNIFIER_SIZE,
+                    height: MAGNIFIER_SIZE,
+                    backgroundImage: `url(${previewUrl})`,
+                    backgroundSize: `${magnifier.bgWidth}px ${magnifier.bgHeight}px`,
+                    backgroundPosition: `${magnifier.bgX}px ${magnifier.bgY}px`,
+                  }}
+                />
+              )}
               <dl className="detail-list dialog-fields-panel">
                 <div className="detail-row">
                   <dt>Status</dt>

@@ -59,10 +59,12 @@ app/page.tsx ("use client")
   is rasterized page-by-page with `pdfjs-dist` + `@napi-rs/canvas` (capped at `MAX_PDF_PAGES`
   pages, currently 15) since Tesseract.js can't read PDF directly; a plain image is treated as one
   page. Each page is run through a Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data
-  cached under `.tesseract-cache/`, gitignored) to get raw OCR text, then that text is sent to the
-  same OpenRouter chat model used for classification with a field-extraction prompt asking for a
-  JSON **array** of receipts — a single page/photo commonly contains more than one receipt, so the
-  model is asked to split them instead of merging their fields. Each array entry carries invoice
+  cached under `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`,
+  since serverless hosts like Vercel ship a read-only deployment bundle and only `/tmp` is
+  writable there) to get raw OCR text, then that text is sent to the same OpenRouter chat model
+  used for classification with a field-extraction prompt asking for a JSON **array** of receipts —
+  a single page/photo commonly contains more than one receipt, so the model is asked to split them
+  instead of merging their fields. Each array entry carries invoice
   fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`, `vatAmount`),
   UK-receipt fields (`vatNumber`, `merchantAddress`, `paymentMethod`, `subtotal`, `receiptTime`),
   and bank-statement fields (`transactionType`, `description`, `debitAmount`, `creditAmount`,
@@ -98,6 +100,15 @@ app/page.tsx ("use client")
   module" error at runtime (not build time) if bundled. Any dynamic `import()` of a pdfjs-dist
   subpath in route code must also use a literal string specifier, not a computed path — a computed
   specifier defeats the externalization and hits the same failure.
+- **This app is deployed on Vercel** (serverless Node functions) as well as run locally — any
+  filesystem write must target `os.tmpdir()`, never `process.cwd()` or a repo-relative path
+  (Vercel's deployment bundle is read-only; only `/tmp` is writable, and it's wiped between
+  invocations). A write to the wrong place throws at *module import time* if it's a top-level side
+  effect, which crashes the whole function before any try/catch runs and surfaces to the client as
+  an HTML error page instead of the route's usual JSON error — this exact bug is why
+  `TESSERACT_CACHE_PATH` in `/api/ocr` uses `os.tmpdir()`. Both routes also set
+  `export const maxDuration` since OCR + PDF rasterization + the OpenRouter round-trip can exceed
+  Vercel's default 10s function timeout, especially on a cold start.
 - Import alias `@/*` maps to the repo root (`tsconfig.json`), e.g. `@/lib/types`.
 - Next.js is pinned to the 14.x line on purpose (matches the original spec); `npm audit` will
   show unresolved "high" advisories that only have fixes in Next 16 — see the note near the end

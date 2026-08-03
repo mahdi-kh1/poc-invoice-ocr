@@ -511,6 +511,10 @@ dialog[open] {
 .dialog-image-wrap-zoomed {
   align-items: flex-start;
   justify-content: flex-start;
+  cursor: grab;
+}
+.dialog-image-wrap-zoomed.dialog-image-wrap-dragging {
+  cursor: grabbing;
 }
 
 .dialog-image {
@@ -547,6 +551,25 @@ dialog[open] {
   min-width: 3.2em;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+.dialog-zoom-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.dialog-magnifier {
+  position: fixed;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  background-repeat: no-repeat;
+  background-color: #fff;
+  z-index: 20;
 }
 
 .dialog-fields-panel {
