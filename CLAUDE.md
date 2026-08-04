@@ -95,6 +95,14 @@ app/page.tsx ("use client")
 - **`lib/categories.ts`**: `DEFAULT_CATEGORIES` (seed list) and `CATEGORIES_STORAGE_KEY` (the
   `localStorage` key the client persists its editable category list under) — shared between
   `app/page.tsx` and `/api/classify`.
+- **`app/ai-test/route.ts`**: `GET /ai-test`, a plain-text connectivity check — confirms
+  `OPENROUTER_API_KEY` is set and OpenRouter actually responds, without uploading a file through
+  the full OCR pipeline first. Not linked from the UI; visit it directly (locally or on the
+  deployed URL) when diagnosing whether a failure is the API key/OpenRouter itself vs. something
+  else. Must set `dynamic = "force-dynamic"` and `cache: "no-store"` on its `fetch` — otherwise
+  Next statically caches the whole route (and/or the fetch call) at build time and every visit
+  replays the same frozen response instead of testing anything live; this was caught by its
+  latency reading a suspicious 0ms on every request.
 
 ## Conventions specific to this repo
 
@@ -102,6 +110,12 @@ app/page.tsx ("use client")
   (`{ error: "..." }` with a non-2xx status), never a raw thrown error or an empty 500 — this
   includes missing env vars, OpenRouter failures, and malformed request bodies. Both routes wrap
   their entire body in try/catch for this reason; keep that pattern for any new route.
+- **Every OpenRouter `fetch` call must set `cache: "no-store"`** — Next.js patches the global
+  `fetch` and will otherwise cache a POST body/response pairing by default. In practice this never
+  corrupted `/api/ocr`/`/api/classify` output because every real request has different OCR text
+  baked into the prompt (a naturally different cache key each time), but it was directly caught on
+  `/ai-test`, which sends the same fixed prompt every call and started returning a frozen 0ms
+  "response" instead of actually hitting OpenRouter.
 - UI is English/LTR end-to-end: `app/layout.tsx` sets `lang="en" dir="ltr"` on `<html>`, and all
   user-visible strings (status labels, table headers, button text) are English.
 - `pdfjs-dist` and `@napi-rs/canvas` must stay listed in `next.config.js`'s

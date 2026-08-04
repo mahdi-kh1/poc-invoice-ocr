@@ -57,6 +57,7 @@ Respond ONLY with a raw JSON object, no markdown fences, no explanation:
           temperature: 0.1,
         }),
         signal: controller.signal,
+        cache: "no-store",
       });
     } catch (err: any) {
       if (err.name === "AbortError") {

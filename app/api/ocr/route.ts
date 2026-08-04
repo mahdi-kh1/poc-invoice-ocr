@@ -194,6 +194,7 @@ ${rawText.slice(0, 6000)}
         temperature: 0.1,
       }),
       signal: controller.signal,
+      cache: "no-store",
     });
   } catch (err: any) {
     if (err.name === "AbortError") {
