@@ -18,5 +18,10 @@
 *.pem
 npm-debug.log*
 
+# local test/sample files dropped at the repo root (e.g. real invoice screenshots used to smoke-
+# test /api/ocr via scripts/test-ocr-sample.mjs) — these can carry real business/bank details and
+# must never be committed
+/Screenshot *.png
+
 # typescript
 *.tsbuildinfo

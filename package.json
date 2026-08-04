@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:ocr-sample": "node scripts/test-ocr-sample.mjs"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.3",
