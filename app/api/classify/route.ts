@@ -5,6 +5,11 @@ import { DEFAULT_CATEGORIES } from "@/lib/categories";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+// See the matching constant in app/api/ocr/route.ts — the free OpenRouter model's response time
+// is highly variable, and Vercel's own timeout kill produces an HTML 504 instead of our JSON error
+// format if this isn't aborted first.
+const OPENROUTER_TIMEOUT_MS = 20_000;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -36,18 +41,36 @@ Extracted Text (partial): ${(rawText || "").slice(0, 800)}
 Respond ONLY with a raw JSON object, no markdown fences, no explanation:
 {"category": "<one of the categories above>", "confidence": <integer 0-100>}`;
 
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.1,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        return NextResponse.json(
+          {
+            error: `The AI model (${model}) took longer than ${OPENROUTER_TIMEOUT_MS / 1000}s to respond — free OpenRouter models can be slow or overloaded. Try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`,
+          },
+          { status: 500 }
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       const errText = await res.text();

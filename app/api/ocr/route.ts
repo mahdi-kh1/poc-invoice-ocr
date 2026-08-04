@@ -16,9 +16,34 @@ const TESSERACT_CACHE_PATH = path.join(os.tmpdir(), "poc-invoice-ocr-tesseract-c
 // trained-data cache silently never persists unless this directory already exists.
 fs.mkdirSync(TESSERACT_CACHE_PATH, { recursive: true });
 
+// Without an explicit langPath, tesseract.js fetches eng.traineddata.gz from jsDelivr's CDN on
+// every cold start, since /tmp (where it would otherwise cache) is wiped between invocations on
+// Vercel — a network round-trip of unpredictable latency was eating the whole 60s function budget
+// on some cold starts, surfacing as a 504 even for a small image. The @tesseract.js-data/eng
+// package ships the exact same file locally, so it's read straight out of the (read-only, but
+// readable) deployment bundle instead — no network call at all. "4.0.0_best_int" matches what
+// tesseract.js would request by default for the default OEM (LSTM-only trained data).
+const LANG_DATA_PATH = path.join(
+  process.cwd(),
+  "node_modules",
+  "@tesseract.js-data",
+  "eng",
+  "4.0.0_best_int"
+);
+
 // Each PDF page triggers its own OCR pass + LLM extraction call, so this caps request
 // cost/latency for this proof-of-concept rather than reflecting a hard technical limit.
 const MAX_PDF_PAGES = 15;
+
+// The free OpenRouter model's response time is highly variable in practice — measured anywhere
+// from ~2s to ~48s for the exact same prompt back to back. Vercel kills the whole function with a
+// bare HTML 504 if maxDuration is exceeded, bypassing our JSON error handling entirely, so this
+// call is aborted well before that ceiling — a slow model response becomes a normal, friendly
+// JSON error instead of an opaque platform-level timeout. (For a multi-page PDF this still doesn't
+// bound the *total* request time across pages — each page gets its own budget, so several slow
+// pages in one request can still add up past maxDuration; only a per-call timeout, not a smarter
+// global deadline, was needed to fix the reported single-image case.)
+const OPENROUTER_TIMEOUT_MS = 45_000;
 
 export const runtime = "nodejs";
 // Tesseract + PDF rasterization + the OpenRouter round-trip can comfortably exceed Vercel's
@@ -153,18 +178,33 @@ OCR TEXT:
 ${rawText.slice(0, 6000)}
 """`;
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.1,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(
+        `The AI model (${model}) took longer than ${OPENROUTER_TIMEOUT_MS / 1000}s to respond — free OpenRouter models can be slow or overloaded. Try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -259,6 +299,7 @@ export async function POST(req: NextRequest) {
 
     const worker = await createWorker(["eng"], undefined, {
       cachePath: TESSERACT_CACHE_PATH,
+      langPath: LANG_DATA_PATH,
     });
 
     const results: OcrExtractedData[] = [];

@@ -243,13 +243,33 @@ constrains anything the API routes do:
   same Amazon Linux target as the function runtime, so `npm install` during the Vercel build picks
   the matching prebuild automatically — no extra config needed, but worth knowing if a future
   dependency doesn't publish a Linux prebuild.
-- Even after fixing the crash above, a full-resolution desktop screenshot (easily 3000px+ on a
-  side) still hit a 504 — Vercel's Hobby-tier CPU allocation is modest, and Tesseract's OCR time
-  scales with pixel count, not just file size. `recognizeText` now downscales any image (photo,
-  screenshot, or rendered PDF page) to `MAX_OCR_DIMENSION` (2000px on the longest side) before
-  handing it to Tesseract — see the note by that constant in `route.ts` for the accuracy trade-off.
-  If a 60s timeout is still hit on some input, the next lever is Vercel Pro's higher function
-  memory (which raises allocated CPU), not a code change.
+- Even after fixing the crash above, a **504** followed for the exact same test file — initially
+  assumed to be an oversized-image/CPU problem (Vercel's Hobby-tier CPU allocation is modest, and
+  Tesseract's OCR time scales with pixel count), so `recognizeText` now downscales any image
+  (photo, screenshot, or rendered PDF page) to `MAX_OCR_DIMENSION` (2000px on the longest side)
+  before handing it to Tesseract — see the note by that constant in `route.ts` for the accuracy
+  trade-off. This is a reasonable thing to have anyway, but it turned out **not** to be the actual
+  cause: the test file was a 508×699 invoice, nowhere near that cap. Timing each phase directly
+  (`worker creation` / `recognize` / the OpenRouter call) found the real bottleneck — see the next
+  two bullets.
+- Without an explicit `langPath`, tesseract.js fetches `eng.traineddata.gz` from jsDelivr's CDN on
+  every cold start, since the writable `/tmp` cache doesn't persist between invocations there. This
+  network dependency is now eliminated: the `@tesseract.js-data/eng` npm package ships the exact
+  same file, so `langPath` points at the copy already sitting in `node_modules` in the deployment
+  bundle — a plain local file read, same content, zero network calls. (Measured locally: worker
+  creation + OCR of the sample invoice = ~2s combined either way — this wasn't the dominant cost,
+  but it's a real, unpredictable-latency network call removed for free.)
+- **The actual dominant cost, confirmed by direct timing**: the free OpenRouter model's response
+  time is wildly inconsistent — as low as ~2s and as high as ~48s for the *identical* prompt sent
+  moments apart in the same test session. Vercel kills the whole function the instant `maxDuration`
+  is hit, which bypasses the route's own try/catch entirely and returns a bare HTML page — exactly
+  the "non-JSON response" error the client was showing. There's no code-level fix for third-party
+  latency variance itself, but both routes now wrap their OpenRouter `fetch` in an
+  `AbortController` (`OPENROUTER_TIMEOUT_MS`: 45s for `/api/ocr`, 20s for `/api/classify`, each
+  leaving headroom under that route's `maxDuration`) so a slow response becomes this repo's normal
+  friendly JSON error instead of an opaque platform-level 504. This does **not** raise the actual
+  60s ceiling — if OpenRouter is slow, the request still fails, just legibly. A calmer free model,
+  or accepting occasional retries, is the only real mitigation on the Hobby tier.
 
 ## Known limitations / explicitly out of scope
 
@@ -264,6 +284,11 @@ constrains anything the API routes do:
 - Multi-receipt detection depends entirely on the LLM correctly splitting OCR text that has no
   structural markers between receipts — there's no image-level segmentation (e.g. detecting
   physical receipt boundaries before OCR), so accuracy degrades on cluttered or overlapping scans.
+- The free OpenRouter model's latency is itself a reliability limitation, not just a speed one —
+  see the Deployment section above. `OPENROUTER_TIMEOUT_MS` turns a slow response into a clean
+  error instead of a platform-level crash, but a request can still legitimately fail because the
+  free tier was momentarily slow/overloaded, with no retry built in. A user hitting "OCR Error"
+  should just be told to try again before assuming something is actually broken.
 - No persistence layer — results exist only in browser memory for the session; row edits made in
   the detail modal are lost on refresh just like everything else.
 - Sequential (not parallel/batched) processing of rows and PDF pages; fine for POC-scale test

@@ -61,25 +61,32 @@ app/page.tsx ("use client")
   page. Every page/image is downscaled to `MAX_OCR_DIMENSION` (2000px longest side) before OCR —
   full-resolution photos/screenshots make Tesseract dramatically slower without more accuracy, and
   this also keeps requests inside Vercel's function timeout. Each page is then run through a
-  Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data
-  cached under `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`,
-  since serverless hosts like Vercel ship a read-only deployment bundle and only `/tmp` is
-  writable there) to get raw OCR text, then that text is sent to the same OpenRouter chat model
-  used for classification with a field-extraction prompt asking for a JSON **array** of receipts —
-  a single page/photo commonly contains more than one receipt, so the model is asked to split them
-  instead of merging their fields. Each array entry carries invoice
-  fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`, `vatAmount`),
-  UK-receipt fields (`vatNumber`, `merchantAddress`, `paymentMethod`, `subtotal`, `receiptTime`),
-  and bank-statement fields (`transactionType`, `description`, `debitAmount`, `creditAmount`,
-  `balance`, `accountName`, `accountNumber`, `sortCode`) — whichever don't apply to the scanned
-  document come back `null` (```json fences stripped before `JSON.parse`, same pattern as
+  Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data cached under
+  `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`, since serverless
+  hosts like Vercel ship a read-only deployment bundle and only `/tmp` is writable there — and
+  loaded via an explicit `langPath` pointing at the `@tesseract.js-data/eng` package already in
+  `node_modules`, so the trained-data file is read from the bundle instead of fetched from
+  jsDelivr's CDN on every cold start) to get raw OCR text, then that text is sent to the same
+  OpenRouter chat model used for classification with a field-extraction prompt asking for a JSON
+  **array** of receipts — a single page/photo commonly contains more than one receipt, so the
+  model is asked to split them instead of merging their fields. That OpenRouter call is wrapped in
+  an `AbortController` timeout (`OPENROUTER_TIMEOUT_MS`) — the free model's response time is
+  highly variable in practice (single-digit seconds to 40+ seconds for the same prompt), and
+  without this Vercel's own `maxDuration` kill produces a bare HTML 504 instead of our JSON error
+  format; aborting first turns a slow model into a normal, friendly error. Each array entry
+  carries invoice fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`,
+  `vatAmount`), UK-receipt fields (`vatNumber`, `merchantAddress`, `paymentMethod`, `subtotal`,
+  `receiptTime`), and bank-statement fields (`transactionType`, `description`, `debitAmount`,
+  `creditAmount`, `balance`, `accountName`, `accountNumber`, `sortCode`) — whichever don't apply to
+  the scanned document come back `null` (```json fences stripped before `JSON.parse`, same pattern as
   `/api/classify`). The route always responds `{ success: true, data: OcrExtractedData[] }`, one
   entry per detected receipt, each tagged with `pageNumber` (1-based for a PDF page, `null` for a
   plain image).
 - **`app/api/classify/route.ts`**: takes the OCR output plus a `categories: string[]` array as
   JSON, prompts an OpenRouter chat model (`OPENROUTER_MODEL`, default `openai/gpt-oss-20b:free` —
   check https://openrouter.ai/models?max_price=0 before relying on any `:free` model still being
-  free) to return raw JSON (```json fences stripped before `JSON.parse`) constrained to one of the
+  free) — same `AbortController`/`OPENROUTER_TIMEOUT_MS` pattern as `/api/ocr` — to return raw
+  JSON (```json fences stripped before `JSON.parse`) constrained to one of the
   given categories. Falls back to `DEFAULT_CATEGORIES` (`lib/categories.ts`) if `categories` is
   omitted or empty — that list is no longer hardcoded in this route.
 - **`lib/types.ts`**: the only cross-cutting module — `RowStatus`, `OcrExtractedData`,
