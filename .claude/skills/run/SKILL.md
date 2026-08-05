@@ -49,7 +49,11 @@ This is a Next.js 14 App Router app (see [CLAUDE.md](../../../CLAUDE.md) and
    `@napi-rs/canvas` before OCR — see CLAUDE.md/design.md). If `OPENROUTER_API_KEY` is actually set
    and you want to exercise the real pipeline, POST a real image/PDF with `-F "file=@some.pdf"` and
    confirm the response is `{"success": true, "data": [...]}` — `data` is always an array now (one
-   entry per receipt found, possibly more than one per page).
+   entry per receipt found, possibly more than one per page). `scripts/test-ocr-sample.mjs
+   [baseUrl] [filePath]` wraps this same check with pass/fail output — defaults to
+   `http://localhost:3000`, but also accepts a deployed URL as `baseUrl` to exercise a Vercel
+   deployment the same way. `GET /ai-test` is a faster first check when only OpenRouter
+   connectivity/env-var correctness is in question, since it skips the OCR pipeline entirely.
 
 5. Report the URL the server is listening on. Next.js only reads `.env.local` at process start —
    if env vars were edited after the server was already running, restart it.
@@ -61,3 +65,24 @@ npm run build
 ```
 Must complete with zero TypeScript/ESLint errors. This is the closest thing this repo has to a
 test suite — treat a clean build as the bar for "done."
+
+## Troubleshooting: works locally but fails/hangs only on Vercel
+
+Don't assume "it built and ran locally" means it'll work when deployed — this repo has already hit
+a bug class where `/api/ocr` worked perfectly in `npm run dev`/`npm start` (which always has the
+full `node_modules`) but hung for the full 60s `maxDuration` and died with a raw platform 504 on
+every single Vercel deployment, with zero difference in behavior across several unrelated-looking
+fix attempts. Root cause: an asset (`tesseract.js-core`'s `.wasm` binary, then
+`@tesseract.js-data/eng`'s `eng.traineddata.gz`) was reachable in code only via a runtime-computed
+path, not a literal `require()`/`import`, so Vercel's build-time file tracer silently omitted it
+from the deployed function — and the dependency's own promise chain had no `.catch()`, so the
+missing file didn't error, it just hung forever. If a similar "works locally, hangs or 500s only in
+production" report comes in for this repo:
+
+1. Check `.next/server/app/<route>/route.js.nft.json` after a build — grep it for the
+   package/file you'd expect the failing code path to touch. If it's missing, that's the bug.
+2. The fix is `next.config.js`'s `experimental.outputFileTracingIncludes` — see the existing
+   entries there and the matching note in CLAUDE.md's Conventions section for the exact pattern.
+3. This can't be reproduced with `npm run dev`/`npm start` locally (full `node_modules` is always
+   present) — the only way to confirm a fix is testing against the actual deployed URL, e.g. via
+   `node scripts/test-ocr-sample.mjs https://<deployment-url> /path/to/file`.

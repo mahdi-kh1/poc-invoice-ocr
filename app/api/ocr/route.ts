@@ -108,7 +108,7 @@ function buildExtractedData(
     paymentMethod: toStringOrNull(fields.paymentMethod),
     subtotal: toNumberOrNull(fields.subtotal),
     receiptTime: toStringOrNull(fields.receiptTime),
-    rawText: rawText.slice(0, 2000),
+    rawText: rawText.slice(0, 4000), // raised from 2000 so a combined two-pass preview isn't cut off mid-Pass-A
     pageNumber,
   };
 }
@@ -170,6 +170,8 @@ async function extractReceipts(
 ): Promise<Record<string, unknown>[]> {
   const prompt = `You are a document data-extraction assistant. The text below was extracted via OCR from a single scanned page or photo, which may contain financial documents — invoices, UK retail receipts, or bank-statement lines (it may contain OCR noise/typos). It is common for MULTIPLE separate receipts/invoices to be scanned or photographed together on one page — identify each distinct document separately, do not merge their fields together.
 
+The OCR text may be split into two labeled passes ("OCR PASS A" and "OCR PASS B") of the SAME document, produced with different image preprocessing — this is not two different documents. Each pass fails in different, uncorrelated ways (one may lose a faint total, the other may misread a smudged line), so cross-reference both passes for every field: if a field is only clear in one pass, use that reading; if both passes show the same value with minor OCR noise (e.g. "GBP7.98" vs "GBP 7,98"), reconcile to the clearest form; if the passes genuinely disagree, prefer whichever reading looks more plausible for that field's type (e.g. a well-formed date or amount over garbled text). Never treat the two passes as separate documents.
+
 Respond with ONLY a raw JSON ARRAY, no markdown fences, no explanation — one object per distinct document found, each shaped exactly like this:
 
 {"vendorName": string|null, "invoiceNumber": string|null, "invoiceDate": string|null, "totalAmount": number|null, "currency": string|null, "vatAmount": number|null, "transactionType": string|null, "description": string|null, "debitAmount": number|null, "creditAmount": number|null, "balance": number|null, "accountName": string|null, "accountNumber": string|null, "sortCode": string|null, "vatNumber": string|null, "merchantAddress": string|null, "paymentMethod": string|null, "subtotal": number|null, "receiptTime": string|null}
@@ -196,7 +198,7 @@ Rules:
 
 OCR TEXT:
 """
-${rawText.slice(0, 6000)}
+${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs roughly 2x a single pass */}
 """`;
 
   const controller = new AbortController();
@@ -382,12 +384,13 @@ async function raceOcr(
 }
 
 /**
- * Runs OCR against the binarized (enhanced) variant first — the best default for typical printed
- * receipts/invoices. Binarization can occasionally lose faint print or colored ink that a plain
- * grayscale pass would have caught, so when the primary pass comes back low-confidence or
- * suspiciously short, a second pass runs against the plain grayscale variant and the better of
- * the two (by Tesseract's own mean confidence) wins — but only if there's still time left in the
- * request's overall deadline, since a second full OCR pass isn't free.
+ * Runs OCR against both the binarized (enhanced) and plain grayscale variants of the image
+ * whenever there's time for both, and returns both raw texts labeled rather than picking a single
+ * "winner" by confidence. Binarization and a plain grayscale pass fail in different, uncorrelated
+ * ways — one might catch a faint total that binarization crushed to white, the other might read a
+ * smudged line the plain pass turned to noise — so instead of discarding whichever text merely
+ * *looks* worse by Tesseract's own confidence score, both are handed to the field-extraction LLM to
+ * cross-reference, which can combine the two far better than picking one blindly ever could.
  */
 async function recognizeText(worker: Worker, imageBuffer: Buffer, deadline: number): Promise<string> {
   const ocrReadyImage = await resizeForOcr(imageBuffer);
@@ -396,12 +399,12 @@ async function recognizeText(worker: Worker, imageBuffer: Buffer, deadline: numb
   const primaryTimeout = Math.min(OCR_TIMEOUT_MS, Math.max(5_000, deadline - Date.now()));
   const primary = await raceOcr(worker, enhanced, primaryTimeout);
 
-  const looksWeak = primary.confidence < 65 || primary.text.trim().length < 20;
   const remaining = deadline - Date.now();
   // Guarantees that even if the second pass runs its full timeout, LLM_MIN_MS is still left over
-  // for the field-extraction call afterward — see LLM_MIN_MS's doc comment.
+  // for the field-extraction call afterward — see LLM_MIN_MS's doc comment. This is the only
+  // reason a second pass is ever skipped — not primary pass confidence.
   const canAffordSecondPass = remaining > OCR_TIMEOUT_MS + LLM_MIN_MS;
-  if (!looksWeak || !canAffordSecondPass) {
+  if (!canAffordSecondPass) {
     return primary.text;
   }
 
@@ -409,7 +412,10 @@ async function recognizeText(worker: Worker, imageBuffer: Buffer, deadline: numb
     const plain = await preprocessForOcr(ocrReadyImage, false);
     const secondaryTimeout = Math.min(OCR_TIMEOUT_MS, remaining - LLM_MIN_MS);
     const secondary = await raceOcr(worker, plain, secondaryTimeout);
-    return secondary.confidence > primary.confidence ? secondary.text : primary.text;
+    if (!secondary.text.trim() || secondary.text.trim() === primary.text.trim()) {
+      return primary.text;
+    }
+    return `--- OCR PASS A (contrast-enhanced + binarized) ---\n${primary.text}\n\n--- OCR PASS B (plain grayscale) ---\n${secondary.text}`;
   } catch {
     // Second pass failed/timed out — the first pass's result is still usable, so fall back to it
     // rather than fail the whole page over a best-effort quality improvement.

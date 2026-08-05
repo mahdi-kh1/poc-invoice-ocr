@@ -58,22 +58,37 @@ app/page.tsx ("use client")
 - **`app/api/ocr/route.ts`**: accepts `multipart/form-data` (field `file`, image **or PDF**). A PDF
   is rasterized page-by-page with `pdfjs-dist` + `@napi-rs/canvas` (capped at `MAX_PDF_PAGES`
   pages, currently 15) since Tesseract.js can't read PDF directly; a plain image is treated as one
-  page. Every page/image is downscaled to `MAX_OCR_DIMENSION` (2000px longest side) before OCR —
-  full-resolution photos/screenshots make Tesseract dramatically slower without more accuracy, and
-  this also keeps requests inside Vercel's function timeout. Each page is then run through a
-  Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data cached under
-  `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`, since serverless
-  hosts like Vercel ship a read-only deployment bundle and only `/tmp` is writable there — and
-  loaded via an explicit `langPath` pointing at the `@tesseract.js-data/eng` package already in
-  `node_modules`, so the trained-data file is read from the bundle instead of fetched from
-  jsDelivr's CDN on every cold start) to get raw OCR text, then that text is sent to the same
-  OpenRouter chat model used for classification with a field-extraction prompt asking for a JSON
-  **array** of receipts — a single page/photo commonly contains more than one receipt, so the
-  model is asked to split them instead of merging their fields. That OpenRouter call is wrapped in
-  an `AbortController` timeout (`OPENROUTER_TIMEOUT_MS`) — the free model's response time is
-  highly variable in practice (single-digit seconds to 40+ seconds for the same prompt), and
-  without this Vercel's own `maxDuration` kill produces a bare HTML 504 instead of our JSON error
-  format; aborting first turns a slow model into a normal, friendly error. Each array entry
+  page. Every page/image is resized toward a target range before OCR — downscaled to
+  `MAX_OCR_DIMENSION` (2000px longest side) if oversized (full-resolution photos/screenshots make
+  Tesseract dramatically slower without more accuracy, and this also keeps requests inside
+  Vercel's function timeout), or upscaled to `MIN_OCR_DIMENSION` (1600px) if undersized (a small
+  photo's text can be only a couple of pixels wide, which Tesseract reads unreliably — observed
+  directly on a real invoice at native ~500×700 resolution). Each resized page/image then gets
+  **two** OCR passes when there's time for both: grayscale + contrast-stretch + Otsu-binarized
+  (the default, best for typical printed receipts) and plain grayscale (no binarization — catches
+  faint print or colored ink that binarization can crush to white). The two passes are **combined,
+  not chosen between** — both raw texts are labeled ("OCR PASS A"/"OCR PASS B") and handed to the
+  field-extraction prompt together with instructions to cross-reference them per-field, since the
+  two failure modes are uncorrelated and picking one by Tesseract's own confidence score would
+  needlessly throw away whichever pass merely *looked* worse. See `recognizeText` in `route.ts`.
+  Each pass runs through a Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data cached
+  under `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`, since
+  serverless hosts like Vercel ship a read-only deployment bundle and only `/tmp` is writable there
+  — and loaded via an explicit `langPath` pointing at the `@tesseract.js-data/eng` package already
+  in `node_modules`, so the trained-data file is read from the bundle instead of fetched from
+  jsDelivr's CDN on every cold start). The combined OCR text is then sent to the same OpenRouter
+  chat model used for classification with a field-extraction prompt asking for a JSON **array** of
+  receipts — a single page/photo commonly contains more than one receipt, so the model is asked to
+  split them instead of merging their fields. That OpenRouter call is wrapped in an
+  `AbortController` timeout (`OPENROUTER_TIMEOUT_MS`) — the free model's response time is highly
+  variable in practice (single-digit seconds to 40+ seconds for the same prompt), and without this
+  Vercel's own `maxDuration` kill produces a bare HTML 504 instead of our JSON error format;
+  aborting first turns a slow model into a normal, friendly error. `createWorker()` itself and
+  every individual OCR pass are *also* raced against their own timeouts
+  (`WORKER_STARTUP_TIMEOUT_MS`, `OCR_TIMEOUT_MS`) against a single overall `deadline` computed at
+  the top of the handler (before any parsing/rasterization/worker-startup work, all of which counts
+  against Vercel's `maxDuration` whether or not it's inside our own budget) — see the "Vercel
+  serverless gotchas" bullet below for why this mattered in practice, not just in theory. Each array entry
   carries invoice fields (`vendorName`, `invoiceNumber`, `invoiceDate`, `totalAmount`, `currency`,
   `vatAmount`), UK-receipt fields (`vatNumber`, `merchantAddress`, `paymentMethod`, `subtotal`,
   `receiptTime`), and bank-statement fields (`transactionType`, `description`, `debitAmount`,
@@ -133,6 +148,21 @@ app/page.tsx ("use client")
   `TESSERACT_CACHE_PATH` in `/api/ocr` uses `os.tmpdir()`. Both routes also set
   `export const maxDuration` since OCR + PDF rasterization + the OpenRouter round-trip can exceed
   Vercel's default 10s function timeout, especially on a cold start.
+- **Any file a route reads via a runtime-computed path (not a literal `require`/`import`) must be
+  force-included in `next.config.js`'s `experimental.outputFileTracingIncludes`, or it silently
+  won't exist in the deployed function on Vercel.** Vercel's build-time file tracer only reliably
+  follows static `require()`/`import` calls; a path built at runtime via `path.join(...)` (like
+  `LANG_DATA_PATH` in `/api/ocr`) or a require reached through several layers of a dependency's own
+  internal logic (like `tesseract.js-core`'s `.wasm` binaries, chosen by runtime SIMD feature
+  detection inside `getCore.js`) is invisible to it. This bit hard in practice: `/api/ocr` worked
+  perfectly locally (where `npm run dev`/`npm start` always has the full `node_modules`, so this
+  class of bug can never reproduce there) while hanging for the full 60s `maxDuration` and dying
+  with a raw platform 504 in every Vercel deployment — because `tesseract.js`'s own WASM-loading
+  promise chain has no `.catch()`, so a missing file doesn't error, it just never resolves, and
+  `createWorker()` hangs forever with nothing downstream able to help. Both the `.wasm` files and
+  `@tesseract.js-data/eng`'s `eng.traineddata.gz` are force-included this way now — check
+  `route.js.nft.json` under `.next/server/app/api/ocr/` after a build if a similar "works locally,
+  hangs/500s on Vercel" bug shows up again for a new dependency.
 - Import alias `@/*` maps to the repo root (`tsconfig.json`), e.g. `@/lib/types`.
 - Next.js is pinned to the 14.x line on purpose (matches the original spec); `npm audit` will
   show unresolved "high" advisories that only have fixes in Next 16 — see the note near the end

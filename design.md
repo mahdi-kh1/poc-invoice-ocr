@@ -85,6 +85,20 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
 - The "Help" toolbar button opens a third `<dialog>` with a static numbered walkthrough of the
   upload → OCR → view → classify → categories → export flow — pure copy, no state, same
   `showModal()`/`close()` pattern as the other two dialogs.
+- **Image zoom/pan** (`previewZoom` state, `imageWrapRef`/`dragState` refs): zoom buttons set
+  `previewZoom` (0.5–4, step 0.25) which drives an inline `width: N%` style on the `<img>` once
+  zoomed past 100%; below that, hovering shows a magnifier lens instead (`handleImageMouseMove`).
+  Two non-obvious CSS/DOM gotchas here, both fixed but worth knowing if the zoom/pan feel ever
+  regresses: (1) `.dialog-image-wrap` is a flex container, and a flex item's default
+  `flex-shrink: 1` keeps shrinking the `<img>` back toward the container's width no matter how
+  large the inline `width: N%` is set — the zoom toolbar's percentage label kept climbing past
+  ~125% while the image visibly stopped growing, since flexbox was quietly overriding the width.
+  Fixed with `flex-shrink: 0` scoped to `.dialog-image-wrap-zoomed .dialog-image`. (2) `<img>`
+  elements are natively draggable in every browser by default — grabbing a zoomed image to pan it
+  was instead triggering the browser's built-in image drag-and-drop (a translucent thumbnail
+  ghost following the cursor) instead of `handleImageWrapMouseMove`'s custom `scrollLeft`/`scrollTop`
+  panning. Fixed with `draggable={false}` + `onDragStart={e => e.preventDefault()}` on the `<img>`,
+  plus `user-select: none` on the zoomed wrap so drag doesn't also select surrounding text.
 
 ## API contracts
 
@@ -149,14 +163,33 @@ Implementation notes:
   bound per-request cost — each page triggers its own OCR pass plus LLM call downstream.
 - OCR is fully local: **one** Tesseract.js worker is created per request (reused across all pages
   of a multi-page PDF) with `langs: ["eng"]`, trained-data cached under
-  `os.tmpdir()/poc-invoice-ocr-tesseract-cache` via the `cachePath` option, and terminated after
-  every page has been processed — no external OCR service, no signup, no card required. This used
-  to be a repo-relative `.tesseract-cache/` folder, which worked locally but crashed on Vercel: the
-  deployment bundle is read-only, so the `fs.mkdirSync` that pre-creates the cache dir threw at
-  module-import time (before the route's try/catch even exists), taking the whole function down
-  and returning an HTML 500 instead of a JSON error. `os.tmpdir()` is writable both locally and on
-  serverless hosts, at the cost of not persisting the cache across separate `next dev` restarts —
-  an acceptable trade for a POC.
+  `os.tmpdir()/poc-invoice-ocr-tesseract-cache` via the `cachePath` option, and terminated
+  (fire-and-forget, not awaited — see Deployment section) after every page has been processed — no
+  external OCR service, no signup, no card required. This used to be a repo-relative
+  `.tesseract-cache/` folder, which worked locally but crashed on Vercel: the deployment bundle is
+  read-only, so the `fs.mkdirSync` that pre-creates the cache dir threw at module-import time
+  (before the route's try/catch even exists), taking the whole function down and returning an HTML
+  500 instead of a JSON error. `os.tmpdir()` is writable both locally and on serverless hosts, at
+  the cost of not persisting the cache across separate `next dev` restarts — an acceptable trade
+  for a POC.
+- **Preprocessing + dual-pass OCR** (`recognizeText` in `route.ts`): each page/image is resized
+  toward a target range (downscaled past `MAX_OCR_DIMENSION`/2000px, or upscaled below
+  `MIN_OCR_DIMENSION`/1600px — a small photo's text can be only a couple of pixels wide, which
+  Tesseract reads unreliably), then run through classic OCR preprocessing: grayscale, contrast
+  stretch to use the full 0–255 range, then Otsu-threshold binarization (turns faint thermal-paper
+  print into solid black-on-white). This binarized "enhanced" pass runs first. Binarization can
+  occasionally crush faint print or colored ink to white that a plain grayscale pass would have
+  caught, so — budget permitting (`canAffordSecondPass`, gated purely on remaining time, not on how
+  the first pass looks) — a **second pass runs against the plain (non-binarized) grayscale
+  variant, and both raw texts are combined, not chosen between**: they're labeled ("OCR PASS
+  A"/"OCR PASS B") and handed to the field-extraction prompt together, with instructions to
+  cross-reference every field between the two rather than have either the code or the model
+  discard one pass's clearer reading of some fields just because its reading of *other* fields was
+  worse. (An earlier version of this picked whichever pass had the higher Tesseract mean
+  confidence — replaced because a "more confident" pass can still have blank/wrong individual
+  fields that the "less confident" pass read correctly.) This roughly doubles per-page OCR time
+  when both passes run — acceptable for this POC's accuracy-over-speed goal, but see the timeout
+  architecture note below for why it can't blow the request budget even so.
 - Tesseract only returns raw text, no structured fields — there's no field-unwrapping helper.
   Instead, each page's raw text is sent to the OpenRouter chat model (`extractReceipts` in
   `route.ts`) with a prompt asking for a JSON **array** of `{vendorName, invoiceNumber, ...}`
@@ -259,17 +292,58 @@ constrains anything the API routes do:
   bundle — a plain local file read, same content, zero network calls. (Measured locally: worker
   creation + OCR of the sample invoice = ~2s combined either way — this wasn't the dominant cost,
   but it's a real, unpredictable-latency network call removed for free.)
-- **The actual dominant cost, confirmed by direct timing**: the free OpenRouter model's response
-  time is wildly inconsistent — as low as ~2s and as high as ~48s for the *identical* prompt sent
-  moments apart in the same test session. Vercel kills the whole function the instant `maxDuration`
-  is hit, which bypasses the route's own try/catch entirely and returns a bare HTML page — exactly
-  the "non-JSON response" error the client was showing. There's no code-level fix for third-party
-  latency variance itself, but both routes now wrap their OpenRouter `fetch` in an
-  `AbortController` (`OPENROUTER_TIMEOUT_MS`: 45s for `/api/ocr`, 20s for `/api/classify`, each
-  leaving headroom under that route's `maxDuration`) so a slow response becomes this repo's normal
-  friendly JSON error instead of an opaque platform-level 504. This does **not** raise the actual
-  60s ceiling — if OpenRouter is slow, the request still fails, just legibly. A calmer free model,
-  or accepting occasional retries, is the only real mitigation on the Hobby tier.
+- **A real but incomplete lead**: the free OpenRouter model's response time is genuinely wildly
+  inconsistent — as low as ~2s and as high as ~48s for the *identical* prompt sent moments apart in
+  the same test session — and both routes wrap their OpenRouter `fetch` in an `AbortController`
+  (`OPENROUTER_TIMEOUT_MS`: now 25s for `/api/ocr`, 20s for `/api/classify`) so a slow response
+  becomes this repo's normal friendly JSON error instead of an opaque platform-level 504. This was
+  originally logged as "the actual dominant cost" — **that conclusion was wrong**, or at least
+  incomplete: it explained *a* source of slow responses, but not the one that kept `/api/ocr`
+  504ing in production long after this fix shipped. See the next bullet for the real root cause.
+- **The real root cause, found via a `logger` progress hook + a lot of bisection**: `/api/ocr` kept
+  hitting a raw platform 504 (bare HTML, `FUNCTION_INVOCATION_TIMEOUT`, no JSON) at almost exactly
+  the 60s `maxDuration` mark, no matter how tightly the OpenRouter timeout, the Tesseract `recognize()`
+  call, or even `createWorker()` itself were individually raced against their own timeouts —
+  because none of those timeouts ever got a chance to fire. `createWorker()`'s own setup chain
+  (`worker-script/index.js`'s `load()`) calls the Emscripten WASM factory with **no `.catch()`** on
+  the returned promise; tesseract.js-core's `.wasm` binary was silently missing from the deployed
+  Vercel function (reachable in that package only via a runtime-computed `require()`, which
+  Vercel's build-time file tracer doesn't follow — a documented, recurring issue for tesseract.js
+  on Vercel), so the WASM factory call never resolved *or* rejected. `createWorker()` hung forever,
+  and every timeout downstream of it — no matter how well-designed — was strictly unreachable.
+  Wiring `createWorker()`'s `logger` option to record the last-seen startup status and including it
+  in the (newly added) worker-startup timeout's error message turned the next production request
+  into `"stuck at: initializing tesseract (0%)"` — a direct pointer at the WASM factory call. Fixed
+  via `next.config.js`'s `experimental.outputFileTracingIncludes`, forcing
+  `tesseract.js-core/**/*.wasm` into the trace. Fixing that surfaced the exact same bug one layer
+  deeper: `@tesseract.js-data/eng`'s `eng.traineddata.gz` is *also* only reachable via a
+  runtime-computed path (`LANG_DATA_PATH`, built with `path.join(...)`, never a literal
+  require/import), so it was equally invisible to the tracer — the next request hung at
+  `"stuck at: loading language traineddata (0%)"` until that path was force-included too. Verified
+  end-to-end against the deployed URL after both fixes: `200 OK` in 48s (cold) then 24s (warm), with
+  correctly extracted fields. See the `outputFileTracingIncludes` bullet in CLAUDE.md's Conventions
+  section — this is a load-bearing gotcha for *any* future dependency that loads an asset via a
+  computed path rather than a literal import, not just tesseract.js.
+- **Timeout architecture, end to end** (`app/api/ocr/route.ts`): a single `deadline` is computed
+  at the very top of the `POST` handler — before `formData()` parsing, PDF rasterization, or
+  `createWorker()`, all of which count against Vercel's `maxDuration` whether or not they're
+  counted in our own budget (an earlier version of this started the clock *after* worker creation,
+  which left a real gap: slow startup wasn't in our budget but was in Vercel's). Everything downstream
+  is raced against that one deadline: `createWorker()` itself (`WORKER_STARTUP_TIMEOUT_MS`, 20s —
+  tesseract.js has no internal timeout anywhere in its own setup chain, so this was added
+  defensively even after the tracing fix, since a *slow* startup is still plausible on a cold,
+  CPU-constrained instance even once a *hung* one no longer is), each individual OCR pass
+  (`OCR_TIMEOUT_MS`, 18s), and the field-extraction LLM call (`OPENROUTER_TIMEOUT_MS`, capped to
+  whatever's left of the deadline, floored at `LLM_MIN_MS`/8s so a slow OCR pass can never starve
+  it entirely). A second OCR pass (see the dual-pass bullet above) only ever runs if
+  `OCR_TIMEOUT_MS + LLM_MIN_MS` of budget remains — this is a pure time-budget gate, unrelated to
+  OCR confidence. `worker.terminate()` is fire-and-forget (not awaited): tesseract.js runs OCR
+  synchronously inside its `worker_threads` thread, so terminating a worker that a timeout raced
+  past mid-`recognize()` could itself block until that computation yields, silently re-adding the
+  exact delay the timeouts exist to cap. None of this raises the actual 60s ceiling — if a page
+  is slow enough, the request still fails — but it guarantees the failure is this repo's normal
+  friendly JSON error, not an opaque platform-level 504, and a multi-page PDF returns whatever
+  pages already succeeded instead of losing all of them to a late failure.
 
 ## Known limitations / explicitly out of scope
 
@@ -300,3 +374,17 @@ constrains anything the API routes do:
   (SSRF/cache-poisoning classes). This POC is deployed to Vercel now, not just `localhost` — this
   hasn't been revisited against that, and should be before treating the Vercel deployment as
   anything more than a convenience demo link.
+- Dual-pass OCR (see the "Preprocessing + dual-pass OCR" bullet above) roughly doubles per-page
+  Tesseract time whenever both passes run, which is most of the time now that the gate is purely
+  time-budget-based rather than confidence-based. Accepted trade-off for this POC's accuracy goal,
+  but worth remeasuring if request latency on Vercel becomes a complaint again.
+- OCR is Tesseract-only — there's no vision-capable LLM cross-check of the raw image alongside the
+  text-based OCR passes. OpenRouter does have free vision-capable models (e.g.
+  `nvidia/nemotron-nano-12b-v2-vl:free`, benchmarked well on OCRBench/DocVQA specifically;
+  `google/gemma-4-31b-it:free` as a general-purpose alternative — always re-check
+  https://openrouter.ai/models?max_price=0 before relying on either still being free) that could
+  read the image directly and contribute a third source to combine with the two Tesseract passes,
+  the same way the two Tesseract passes are already combined rather than picked-between. Not
+  implemented: it roughly triples per-page latency and OpenRouter free-tier rate-limit pressure
+  (already observed hitting 429s from the shared free pool during normal testing in this session)
+  on top of the dual Tesseract passes, so it's a real trade-off to weigh, not a strict improvement.
