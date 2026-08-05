@@ -246,7 +246,23 @@ ${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs ro
       }
 
       const json = await res.json();
-      const content: string = json.choices?.[0]?.message?.content ?? "";
+      const choice = json.choices?.[0];
+      const content: string = choice?.message?.content ?? "";
+
+      // json.choices?.[0]?.message?.content ?? "" silently becomes "" whenever the API response
+      // has no usable content — not just malformed JSON. This happens for real: a free model can
+      // return a genuinely empty completion (moderation refusal, degenerate output under load,
+      // hitting its own internal error) with an HTTP 200 and no other signal. Checking for this
+      // *before* attempting JSON.parse means the error message actually explains what happened
+      // instead of the unhelpful "invalid JSON: " (nothing after the colon) an empty string
+      // produces from the generic parse-failure branch below.
+      if (!content.trim()) {
+        const reason = choice?.finish_reason || choice?.message?.refusal || "no reason given by the model";
+        throw new Error(
+          `The AI model (${model}) returned an empty response (${reason}). This can happen when a free model is overloaded or briefly misbehaves — try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`
+        );
+      }
+
       const cleaned = content.replace(/```json|```/g, "").trim();
       let parsed: unknown;
       try {

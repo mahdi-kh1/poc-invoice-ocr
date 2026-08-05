@@ -104,7 +104,21 @@ Respond ONLY with a raw JSON object, no markdown fences, no explanation:
         }
 
         const json = await res.json();
-        const content: string = json.choices?.[0]?.message?.content ?? "";
+        const choice = json.choices?.[0];
+        const content: string = choice?.message?.content ?? "";
+
+        // See the matching comment in app/api/ocr/route.ts's extractReceipts — content can be
+        // genuinely empty (moderation refusal, degenerate free-model output) with an HTTP 200 and
+        // no other signal, which reads as an unhelpful "invalid JSON" error unless checked first.
+        if (!content.trim()) {
+          const reason = choice?.finish_reason || choice?.message?.refusal || "no reason given by the model";
+          return NextResponse.json(
+            {
+              error: `The AI model (${model}) returned an empty response (${reason}). This can happen when a free model is overloaded or briefly misbehaves — try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`,
+            },
+            { status: 500 }
+          );
+        }
 
         let parsed: ClassifyResult;
         try {
