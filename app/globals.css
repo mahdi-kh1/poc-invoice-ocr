@@ -512,6 +512,7 @@ dialog[open] {
   align-items: flex-start;
   justify-content: flex-start;
   cursor: grab;
+  user-select: none;
 }
 .dialog-image-wrap-zoomed.dialog-image-wrap-dragging {
   cursor: grabbing;
@@ -522,6 +523,14 @@ dialog[open] {
   height: auto;
   object-fit: contain;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+/* Without this, flexbox's default flex-shrink:1 keeps shrinking the zoomed image back toward
+   the wrap's own width no matter how large the inline `width: N%` style is set, which reads as
+   zoom "stopping" past a certain percentage even though the toolbar number keeps climbing. */
+.dialog-image-wrap-zoomed .dialog-image {
+  flex-shrink: 0;
 }
 
 .dialog-pdf-frame {

@@ -601,6 +601,8 @@ export default function Home() {
                       alt={`Receipt image for ${selectedRow.filename}`}
                       className="dialog-image"
                       style={previewZoom > 1 ? { width: `${previewZoom * 100}%`, maxWidth: "none" } : undefined}
+                      draggable={false}
+                      onDragStart={(e) => e.preventDefault()}
                       onMouseMove={handleImageMouseMove}
                       onMouseLeave={handleImageMouseLeave}
                     />
