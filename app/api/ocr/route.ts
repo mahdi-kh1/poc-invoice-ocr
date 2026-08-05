@@ -54,6 +54,10 @@ const OCR_TIMEOUT_MS = 18_000;
 // entire request budget and leave nothing for it — see the canAffordSecondPass check below.
 const LLM_MIN_MS = 8_000;
 
+// Ceiling on createWorker() itself (spawning the worker thread, loading the core WASM engine and
+// language data) — see the comment at its call site for why this matters.
+const WORKER_STARTUP_TIMEOUT_MS = 20_000;
+
 // Single-page budget leaves ~10s of the 60s maxDuration for worker startup, PDF rasterization,
 // downscaling, and network overhead — enough for one page/image to always fail as JSON instead of
 // a raw platform 504 before ever hitting the hard kill. A multi-page PDF can still exceed the
@@ -466,10 +470,28 @@ export async function POST(req: NextRequest) {
       pageImages = [{ image: buffer, pageNumber: null }];
     }
 
-    const worker = await createWorker(["eng"], undefined, {
-      cachePath: TESSERACT_CACHE_PATH,
-      langPath: LANG_DATA_PATH,
-    });
+    // tesseract.js's own createWorker() has no internal timeout anywhere — if its setup chain
+    // (spawning the worker thread, loading the core WASM engine, loading language data) hangs
+    // instead of erroring, `await createWorker(...)` would hang forever and none of the deadline
+    // logic below would ever run, no matter how it's tuned. Race it explicitly so a stuck startup
+    // becomes the same friendly JSON error as every other failure mode here.
+    let worker: Worker;
+    try {
+      worker = await Promise.race([
+        createWorker(["eng"], undefined, {
+          cachePath: TESSERACT_CACHE_PATH,
+          langPath: LANG_DATA_PATH,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("The OCR engine failed to start in time — please try again in a moment.")),
+            WORKER_STARTUP_TIMEOUT_MS
+          )
+        ),
+      ]);
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
 
     // Parsing/rasterization/worker-startup alone already used up the safety margin — bail out now
     // with a friendly error instead of starting OCR work we don't have room to finish before
