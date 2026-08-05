@@ -414,6 +414,13 @@ async function recognizeText(worker: Worker, imageBuffer: Buffer, deadline: numb
 }
 
 export async function POST(req: NextRequest) {
+  // Started here, not after worker creation — request parsing, PDF rasterization, and Tesseract
+  // worker startup (reading trained data + WASM init) can themselves be slow on a cold Vercel
+  // instance, and none of that time is optional or skippable. Starting the clock later left a gap
+  // where those steps ate into the 60s maxDuration without counting against our own budget, so the
+  // total could still exceed it and hit Vercel's hard kill (raw HTML 504) despite every downstream
+  // timeout looking individually safe.
+  const deadline = Date.now() + REQUEST_DEADLINE_MS;
   try {
     let formData: FormData;
     try {
@@ -464,7 +471,21 @@ export async function POST(req: NextRequest) {
       langPath: LANG_DATA_PATH,
     });
 
-    const deadline = Date.now() + REQUEST_DEADLINE_MS;
+    // Parsing/rasterization/worker-startup alone already used up the safety margin — bail out now
+    // with a friendly error instead of starting OCR work we don't have room to finish before
+    // Vercel's hard kill.
+    if (deadline - Date.now() < OCR_TIMEOUT_MS + LLM_MIN_MS) {
+      // Not awaited — see the finally block below for why.
+      worker.terminate().catch(() => {});
+      return NextResponse.json(
+        {
+          error:
+            "The server is warming up (cold start) and ran out of time to process this file — please try again in a few seconds.",
+        },
+        { status: 503 }
+      );
+    }
+
     const results: OcrExtractedData[] = [];
     try {
       for (const { image, pageNumber } of pageImages) {
@@ -482,7 +503,11 @@ export async function POST(req: NextRequest) {
         }
       }
     } finally {
-      await worker.terminate();
+      // Not awaited: if a timed-out OCR pass left the worker mid-computation inside synchronous
+      // WASM, terminate() can itself block until that computation yields — awaiting it here would
+      // silently re-introduce the exact delay the timeouts above exist to cap. Vercel tears down
+      // the whole sandbox after the response anyway, so cleanup doesn't need to finish first.
+      worker.terminate().catch(() => {});
     }
 
     if (results.length === 0) {
