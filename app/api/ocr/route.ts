@@ -58,6 +58,14 @@ const LLM_MIN_MS = 8_000;
 // language data) — see the comment at its call site for why this matters.
 const WORKER_STARTUP_TIMEOUT_MS = 20_000;
 
+// Optional third OCR source (see recognizeText) — a vision-capable model reading the image
+// directly, opt-in via the `useVisionAssist` form field. Off by default: it's an extra OpenRouter
+// round-trip on top of the field-extraction call, adding latency and free-tier rate-limit
+// pressure. Override with OPENROUTER_VISION_MODEL if this one stops being free — always check
+// https://openrouter.ai/models?max_price=0 (filter for vision/image input) before relying on it.
+const DEFAULT_VISION_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free";
+const VISION_TIMEOUT_MS = 25_000;
+
 // Single-page budget leaves ~10s of the 60s maxDuration for worker startup, PDF rasterization,
 // downscaling, and network overhead — enough for one page/image to always fail as JSON instead of
 // a raw platform 504 before ever hitting the hard kill. A multi-page PDF can still exceed the
@@ -170,7 +178,7 @@ async function extractReceipts(
 ): Promise<Record<string, unknown>[]> {
   const prompt = `You are a document data-extraction assistant. The text below was extracted via OCR from a single scanned page or photo, which may contain financial documents — invoices, UK retail receipts, or bank-statement lines (it may contain OCR noise/typos). It is common for MULTIPLE separate receipts/invoices to be scanned or photographed together on one page — identify each distinct document separately, do not merge their fields together.
 
-The OCR text may be split into two labeled passes ("OCR PASS A" and "OCR PASS B") of the SAME document, produced with different image preprocessing — this is not two different documents. Each pass fails in different, uncorrelated ways (one may lose a faint total, the other may misread a smudged line), so cross-reference both passes for every field: if a field is only clear in one pass, use that reading; if both passes show the same value with minor OCR noise (e.g. "GBP7.98" vs "GBP 7,98"), reconcile to the clearest form; if the passes genuinely disagree, prefer whichever reading looks more plausible for that field's type (e.g. a well-formed date or amount over garbled text). Never treat the two passes as separate documents.
+The OCR text may be split into multiple labeled passes ("OCR PASS A", "OCR PASS B", and sometimes "OCR PASS C") of the SAME document, produced by different methods — this is not multiple different documents. Passes A and B are traditional OCR with different image preprocessing; pass C, when present, is a vision-capable AI model's direct reading of the image, which can better understand layout/context but can also occasionally paraphrase or restructure rather than transcribe verbatim. Each pass fails in different, uncorrelated ways (one may lose a faint total, another may misread a smudged line), so cross-reference every pass present for every field: if a field is only clear in one pass, use that reading; if passes show the same value with minor noise (e.g. "GBP7.98" vs "GBP 7,98"), reconcile to the clearest form; if passes genuinely disagree, prefer whichever reading looks more plausible for that field's type (e.g. a well-formed date or amount over garbled text). Never treat separate passes as separate documents.
 
 Respond with ONLY a raw JSON ARRAY, no markdown fences, no explanation — one object per distinct document found, each shaped exactly like this:
 
@@ -203,51 +211,79 @@ ${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs ro
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
-      cache: "no-store",
-    });
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new Error(
-        `The AI model (${model}) took longer than ${Math.round(timeoutMs / 1000)}s to respond — free OpenRouter models can be slow or overloaded. Try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`
-      );
+
+  // AbortController alone only guarantees `fetch()` itself gets interrupted — it does NOT bound
+  // `res.json()` afterward, and that gap let a near-identical call (visionTranscribe) hang
+  // indefinitely with a slow/stalled response despite its "timeout" supposedly firing. Wrapping
+  // the whole fetch+parse flow in Promise.race guarantees this always returns or throws by
+  // timeoutMs regardless of what's actually slow inside it — see visionTranscribe's comment.
+  // The whole body is one try/catch, not just the fetch() call — the abort signal can also
+  // interrupt an in-flight res.json() body read (fetch() resolving only means headers arrived),
+  // and an AbortError from there is just as unhelpful raw ("This operation was aborted") as one
+  // from fetch() itself if it isn't caught and reworded here too.
+  const run = async (): Promise<Record<string, unknown>[]> => {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.1,
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(
+          `OpenRouter error during field extraction (${res.status}): ${errText}. If the selected model is no longer free, change OPENROUTER_MODEL in .env.local — current free list: openrouter.ai/models?max_price=0`
+        );
+      }
+
+      const json = await res.json();
+      const content: string = json.choices?.[0]?.message?.content ?? "";
+      const cleaned = content.replace(/```json|```/g, "").trim();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        throw new Error(`Model response could not be parsed (invalid JSON): ${content.slice(0, 300)}`);
+      }
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      return list.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        throw new Error(
+          `The AI model (${model}) took longer than ${Math.round(timeoutMs / 1000)}s to respond — free OpenRouter models can be slow or overloaded. Try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`
+        );
+      }
+      throw err;
     }
-    throw err;
+  };
+
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `The AI model (${model}) took longer than ${Math.round(timeoutMs / 1000)}s to respond — free OpenRouter models can be slow or overloaded. Try again in a moment, or switch OPENROUTER_MODEL in .env.local to a different free model: openrouter.ai/models?max_price=0`
+              )
+            ),
+          timeoutMs
+        )
+      ),
+    ]);
   } finally {
     clearTimeout(timeoutId);
   }
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(
-      `OpenRouter error during field extraction (${res.status}): ${errText}. If the selected model is no longer free, change OPENROUTER_MODEL in .env.local — current free list: openrouter.ai/models?max_price=0`
-    );
-  }
-
-  const json = await res.json();
-  const content: string = json.choices?.[0]?.message?.content ?? "";
-  const cleaned = content.replace(/```json|```/g, "").trim();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error(`Model response could not be parsed (invalid JSON): ${content.slice(0, 300)}`);
-  }
-  const list = Array.isArray(parsed) ? parsed : [parsed];
-  return list.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
 }
 
 // Full-resolution photos/screenshots (easily 3000px+ on a side) make Tesseract dramatically
@@ -384,43 +420,158 @@ async function raceOcr(
 }
 
 /**
- * Runs OCR against both the binarized (enhanced) and plain grayscale variants of the image
- * whenever there's time for both, and returns both raw texts labeled rather than picking a single
- * "winner" by confidence. Binarization and a plain grayscale pass fail in different, uncorrelated
- * ways — one might catch a faint total that binarization crushed to white, the other might read a
- * smudged line the plain pass turned to noise — so instead of discarding whichever text merely
- * *looks* worse by Tesseract's own confidence score, both are handed to the field-extraction LLM to
- * cross-reference, which can combine the two far better than picking one blindly ever could.
+ * Sends the image directly to a vision-capable OpenRouter model and asks it to transcribe visible
+ * text verbatim. Deliberately kept as a text-transcription task (not a separate structured-field
+ * extraction call) so its output can be combined with the two Tesseract passes using the exact
+ * same cross-referencing prompt in extractReceipts, instead of needing a whole parallel
+ * field-merging codepath — see the "OCR PASS C" handling in that prompt.
  */
-async function recognizeText(worker: Worker, imageBuffer: Buffer, deadline: number): Promise<string> {
+async function visionTranscribe(
+  imageBuffer: Buffer,
+  apiKey: string,
+  model: string,
+  timeoutMs: number
+): Promise<string> {
+  const base64 = imageBuffer.toString("base64");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // AbortController alone only guarantees the *fetch()* call itself gets interrupted — it does
+  // NOT bound `res.json()` afterward, and in practice that gap let a slow/stalled response hang
+  // this call indefinitely with no timeout at all (observed directly: a vision request sat past
+  // its supposed timeout with zero progress). Wrapping the whole fetch+parse flow in Promise.race
+  // — the same defensive pattern raceOcr() uses for Tesseract — guarantees this function always
+  // returns or throws by timeoutMs, regardless of what's actually slow inside it.
+  // The whole body is one try/catch, not just the fetch() call — the abort signal can also
+  // interrupt an in-flight res.json() body read (fetch() resolving only means headers arrived),
+  // and an AbortError from there is just as unhelpful raw ("This operation was aborted") as one
+  // from fetch() itself if it isn't caught and reworded here too.
+  const run = async (): Promise<string> => {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "Transcribe every piece of visible text in this image verbatim, top to bottom, preserving line breaks. This is a scanned invoice, receipt, or bank statement — include all numbers, dates, and labels exactly as printed. Do not summarize, explain, or add commentary — output only the transcribed text.",
+                },
+                { type: "image_url", image_url: { url: `data:image/png;base64,${base64}` } },
+              ],
+            },
+          ],
+          temperature: 0.1,
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`OpenRouter vision error (${res.status}): ${errText}`);
+      }
+
+      const json = await res.json();
+      return json.choices?.[0]?.message?.content ?? "";
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        throw new Error(`Vision model (${model}) took longer than ${Math.round(timeoutMs / 1000)}s to respond`);
+      }
+      throw err;
+    }
+  };
+
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Vision model (${model}) took longer than ${Math.round(timeoutMs / 1000)}s to respond`)),
+          timeoutMs
+        )
+      ),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Runs OCR against both the binarized (enhanced) and plain grayscale variants of the image
+ * whenever there's time for both, plus an optional third pass from a vision-capable model reading
+ * the image directly (`vision`, opt-in) — and returns every pass's raw text labeled rather than
+ * picking a single "winner" by confidence. Each method fails in different, uncorrelated ways — one
+ * might catch a faint total another crushed to white or misread as noise — so instead of
+ * discarding whichever text merely *looks* worse, all of them are handed to the field-extraction
+ * LLM to cross-reference, which can combine multiple sources far better than picking one blindly.
+ *
+ * The vision call (when enabled) is started immediately, before the Tesseract passes, and only
+ * awaited at the end — its network latency then overlaps with Tesseract's CPU-bound worker_thread
+ * computation instead of stacking on top of it sequentially, which is what makes a third source
+ * affordable within the same per-page time budget.
+ */
+async function recognizeText(
+  worker: Worker,
+  imageBuffer: Buffer,
+  deadline: number,
+  vision: { apiKey: string; model: string } | null
+): Promise<string> {
   const ocrReadyImage = await resizeForOcr(imageBuffer);
+
+  // Reserve LLM_MIN_MS same as every other timeout here, and skip entirely if there isn't a
+  // reasonable window left — no point starting a request that's about to be starved anyway.
+  const visionBudget = deadline - Date.now() - LLM_MIN_MS;
+  const visionPromise =
+    vision && visionBudget > 8_000
+      ? visionTranscribe(ocrReadyImage, vision.apiKey, vision.model, Math.min(VISION_TIMEOUT_MS, visionBudget)).catch(
+          () => ""
+        )
+      : null;
 
   const enhanced = await preprocessForOcr(ocrReadyImage, true);
   const primaryTimeout = Math.min(OCR_TIMEOUT_MS, Math.max(5_000, deadline - Date.now()));
   const primary = await raceOcr(worker, enhanced, primaryTimeout);
+
+  const passes: { label: string; text: string }[] = [
+    { label: "OCR PASS A (contrast-enhanced + binarized)", text: primary.text },
+  ];
 
   const remaining = deadline - Date.now();
   // Guarantees that even if the second pass runs its full timeout, LLM_MIN_MS is still left over
   // for the field-extraction call afterward — see LLM_MIN_MS's doc comment. This is the only
   // reason a second pass is ever skipped — not primary pass confidence.
   const canAffordSecondPass = remaining > OCR_TIMEOUT_MS + LLM_MIN_MS;
-  if (!canAffordSecondPass) {
-    return primary.text;
+  if (canAffordSecondPass) {
+    try {
+      const plain = await preprocessForOcr(ocrReadyImage, false);
+      const secondaryTimeout = Math.min(OCR_TIMEOUT_MS, remaining - LLM_MIN_MS);
+      const secondary = await raceOcr(worker, plain, secondaryTimeout);
+      if (secondary.text.trim() && secondary.text.trim() !== primary.text.trim()) {
+        passes.push({ label: "OCR PASS B (plain grayscale)", text: secondary.text });
+      }
+    } catch {
+      // Second pass failed/timed out — passes already collected are still usable, so fall back to
+      // those rather than fail the whole page over a best-effort quality improvement.
+    }
   }
 
-  try {
-    const plain = await preprocessForOcr(ocrReadyImage, false);
-    const secondaryTimeout = Math.min(OCR_TIMEOUT_MS, remaining - LLM_MIN_MS);
-    const secondary = await raceOcr(worker, plain, secondaryTimeout);
-    if (!secondary.text.trim() || secondary.text.trim() === primary.text.trim()) {
-      return primary.text;
+  if (visionPromise) {
+    const visionText = await visionPromise;
+    if (visionText.trim()) {
+      passes.push({ label: "OCR PASS C (AI vision model reading)", text: visionText });
     }
-    return `--- OCR PASS A (contrast-enhanced + binarized) ---\n${primary.text}\n\n--- OCR PASS B (plain grayscale) ---\n${secondary.text}`;
-  } catch {
-    // Second pass failed/timed out — the first pass's result is still usable, so fall back to it
-    // rather than fail the whole page over a best-effort quality improvement.
-    return primary.text;
   }
+
+  if (passes.length === 1) return passes[0].text;
+  return passes.map((p) => `--- ${p.label} ---\n${p.text}`).join("\n\n");
 }
 
 export async function POST(req: NextRequest) {
@@ -449,6 +600,9 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+    const visionModel = process.env.OPENROUTER_VISION_MODEL || DEFAULT_VISION_MODEL;
+    // Form fields always arrive as strings — "true"/"false", not a real boolean.
+    const useVisionAssist = formData.get("useVisionAssist") === "true";
 
     if (!apiKey) {
       return NextResponse.json(
@@ -531,7 +685,12 @@ export async function POST(req: NextRequest) {
         // Vercel's hard maxDuration kill discarding all of them as a raw 504.
         if (results.length > 0 && deadline - Date.now() < OCR_TIMEOUT_MS + LLM_MIN_MS) break;
 
-        const rawText = await recognizeText(worker, image, deadline);
+        const rawText = await recognizeText(
+          worker,
+          image,
+          deadline,
+          useVisionAssist ? { apiKey, model: visionModel } : null
+        );
         if (!rawText.trim()) continue;
         const llmTimeoutMs = Math.max(LLM_MIN_MS, Math.min(OPENROUTER_TIMEOUT_MS, deadline - Date.now()));
         const receipts = await extractReceipts(rawText, apiKey, model, llmTimeoutMs);

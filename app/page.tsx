@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { RowStatus } from "@/lib/types";
 import { DEFAULT_CATEGORIES, CATEGORIES_STORAGE_KEY } from "@/lib/categories";
+import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, type AppSettings } from "@/lib/settings";
 
 interface InvoiceRow {
   id: string;
@@ -104,6 +105,18 @@ async function parseApiResponse(res: Response): Promise<any> {
   }
 }
 
+// Vision-assisted classification (see lib/settings.ts) sends the image inline as a base64 data
+// URL rather than switching /api/classify to multipart — the payload is small (receipt-sized
+// images) and this keeps that route's request shape as plain JSON either way.
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -127,8 +140,11 @@ export default function Home() {
   const detailDialogRef = useRef<HTMLDialogElement>(null);
   const categoriesDialogRef = useRef<HTMLDialogElement>(null);
   const helpDialogRef = useRef<HTMLDialogElement>(null);
+  const settingsDialogRef = useRef<HTMLDialogElement>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   const selectedRow = rows.find((r) => r.id === selectedRowId) || null;
 
@@ -154,6 +170,34 @@ export default function Home() {
       // ignore persistence failures (e.g. private browsing quota)
     }
   }, [categories]);
+
+  // Load saved vision-assist preferences from a previous session (client-only, same reasoning as
+  // categories above — avoids a server/client hydration mismatch since localStorage doesn't exist
+  // during SSR).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          setSettings({
+            visionOcrAssist: parsed.visionOcrAssist === true,
+            visionClassifyAssist: parsed.visionClassifyAssist === true,
+          });
+        }
+      }
+    } catch {
+      // localStorage unavailable or corrupt — keep defaults
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // ignore persistence failures (e.g. private browsing quota)
+    }
+  }, [settings]);
 
   useEffect(() => {
     const dialog = detailDialogRef.current;
@@ -184,6 +228,16 @@ export default function Home() {
       dialog.close();
     }
   }, [helpOpen]);
+
+  useEffect(() => {
+    const dialog = settingsDialogRef.current;
+    if (!dialog) return;
+    if (settingsOpen) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [settingsOpen]);
 
   useEffect(() => {
     setPreviewZoom(1);
@@ -295,6 +349,7 @@ export default function Home() {
       try {
         const fd = new FormData();
         fd.append("file", row.file);
+        fd.append("useVisionAssist", String(settings.visionOcrAssist));
         const res = await fetch("/api/ocr", { method: "POST", body: fd });
         const json = await parseApiResponse(res);
         if (!res.ok || !json.success) {
@@ -347,6 +402,12 @@ export default function Home() {
     for (const row of targets) {
       updateRow(row.id, { status: "classify_running", error: undefined });
       try {
+        // Vision assist only makes sense for an actual image — a PDF row has no single rendered
+        // page to send here (the OCR route rasterizes PDF pages server-side and doesn't keep the
+        // result), so this silently falls back to text-only classification for those regardless
+        // of the setting, same as the route itself does if imageDataUrl is omitted.
+        const wantsVision = settings.visionClassifyAssist && row.file.type !== "application/pdf";
+        const imageDataUrl = wantsVision ? await fileToDataURL(row.file).catch(() => null) : null;
         const res = await fetch("/api/classify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -357,6 +418,8 @@ export default function Home() {
             invoiceNumber: row.invoiceNumber,
             rawText: row.rawText,
             categories,
+            useVisionAssist: settings.visionClassifyAssist,
+            imageDataUrl,
           }),
         });
         const json = await parseApiResponse(res);
@@ -486,6 +549,9 @@ export default function Home() {
         </button>
         <button className="btn" onClick={() => setCategoriesOpen(true)}>
           Categories ({categories.length})
+        </button>
+        <button className="btn" onClick={() => setSettingsOpen(true)}>
+          Settings
         </button>
         <button className="btn" onClick={() => setHelpOpen(true)}>
           Help
@@ -770,6 +836,82 @@ export default function Home() {
       </dialog>
 
       <dialog
+        ref={settingsDialogRef}
+        className="categories-dialog"
+        onClose={() => setSettingsOpen(false)}
+        onClick={closeDialogOnBackdropClick}
+        aria-labelledby="settings-dialog-title"
+      >
+        <div className="dialog-body">
+          <div className="dialog-header">
+            <h2 id="settings-dialog-title" className="dialog-title">
+              Settings
+            </h2>
+            <button
+              className="btn btn-icon"
+              aria-label="Close dialog"
+              onClick={() => settingsDialogRef.current?.close()}
+            >
+              ×
+            </button>
+          </div>
+          <div className="dialog-content dialog-content-stack">
+            <p className="app-subtitle">
+              Both settings are off by default — each adds an extra AI vision-model call on top of
+              the normal pipeline, which increases processing time and can hit OpenRouter's free-tier
+              rate limits sooner.
+            </p>
+            <div className="settings-row">
+              <label className="toggle-switch" htmlFor="vision-ocr-toggle">
+                <input
+                  id="vision-ocr-toggle"
+                  type="checkbox"
+                  checked={settings.visionOcrAssist}
+                  onChange={(e) => setSettings((s) => ({ ...s, visionOcrAssist: e.target.checked }))}
+                />
+                <span className="toggle-track" aria-hidden="true">
+                  <span className="toggle-thumb" />
+                </span>
+              </label>
+              <div className="settings-row-text">
+                <label htmlFor="vision-ocr-toggle" className="settings-row-title">
+                  AI vision assist for OCR (Step 1)
+                </label>
+                <p className="settings-row-desc">
+                  Adds a vision-capable AI model reading the image directly as a third OCR source,
+                  combined with the two Tesseract passes rather than replacing them — the field
+                  extraction step cross-references all sources instead of picking one.
+                </p>
+              </div>
+            </div>
+            <div className="settings-row">
+              <label className="toggle-switch" htmlFor="vision-classify-toggle">
+                <input
+                  id="vision-classify-toggle"
+                  type="checkbox"
+                  checked={settings.visionClassifyAssist}
+                  onChange={(e) => setSettings((s) => ({ ...s, visionClassifyAssist: e.target.checked }))}
+                />
+                <span className="toggle-track" aria-hidden="true">
+                  <span className="toggle-thumb" />
+                </span>
+              </label>
+              <div className="settings-row-text">
+                <label htmlFor="vision-classify-toggle" className="settings-row-title">
+                  AI vision assist for Classification (Step 2)
+                </label>
+                <p className="settings-row-desc">
+                  Sends the receipt/invoice image itself alongside the extracted fields when
+                  classifying, so a visible logo, letterhead, or layout can help pick a category the
+                  text alone left ambiguous. Image files only — PDF rows always classify from text.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog
         ref={helpDialogRef}
         className="help-dialog"
         onClose={() => setHelpOpen(false)}
@@ -813,6 +955,11 @@ export default function Home() {
               <li>
                 <strong>Categories.</strong> Add or remove categories any time — changes are saved in this
                 browser and used for future classification runs.
+              </li>
+              <li>
+                <strong>Settings.</strong> Two off-by-default toggles that add an AI vision model
+                reading the image directly — one for OCR, one for Classification — for extra accuracy
+                at the cost of extra processing time and free-tier rate-limit pressure.
               </li>
               <li>
                 <strong>Export CSV.</strong> Download all results as a spreadsheet.

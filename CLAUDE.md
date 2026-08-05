@@ -51,6 +51,8 @@ app/page.tsx ("use client")
   ├─ "Show Error" per row (rendered only when `error` is set) → opens the same detail dialog with
   │  the full error message in a banner, instead of truncating it in the table cell
   ├─ "Categories" button → native <dialog> to add/remove categories (persisted to localStorage)
+  ├─ "Settings" button → native <dialog> with two opt-in toggles (persisted to localStorage,
+  │  `lib/settings.ts`): AI vision assist for OCR, and for Classification — see below
   ├─ "Help" button → native <dialog> describing the end-to-end flow
   └─ CSV export — pure client-side (Blob + URL.createObjectURL, UTF-8 BOM)
 ```
@@ -71,7 +73,15 @@ app/page.tsx ("use client")
   field-extraction prompt together with instructions to cross-reference them per-field, since the
   two failure modes are uncorrelated and picking one by Tesseract's own confidence score would
   needlessly throw away whichever pass merely *looked* worse. See `recognizeText` in `route.ts`.
-  Each pass runs through a Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data cached
+  A third, **opt-in** source can join these two: when the client sends `useVisionAssist: "true"`
+  (driven by the Settings dialog's "AI vision assist for OCR" toggle, off by default —
+  `lib/settings.ts`), a vision-capable OpenRouter model (`OPENROUTER_VISION_MODEL`, default
+  `nvidia/nemotron-nano-12b-v2-vl:free`) is sent the image directly and asked to transcribe visible
+  text verbatim (`visionTranscribe`) — labeled "OCR PASS C" and combined the same way as A/B. This
+  call is kicked off *before* the two Tesseract passes and only awaited afterward, so its network
+  latency overlaps with Tesseract's CPU-bound `worker_thread` computation instead of stacking on
+  top of it — the only way a third source fits in the same per-page time budget. Each pass runs
+  through a Tesseract.js worker (`createWorker(["eng"], ...)`, trained-data cached
   under `os.tmpdir()/poc-invoice-ocr-tesseract-cache` — **not** under the repo/`cwd()`, since
   serverless hosts like Vercel ship a read-only deployment bundle and only `/tmp` is writable there
   — and loaded via an explicit `langPath` pointing at the `@tesseract.js-data/eng` package already
@@ -103,13 +113,24 @@ app/page.tsx ("use client")
   free) — same `AbortController`/`OPENROUTER_TIMEOUT_MS` pattern as `/api/ocr` — to return raw
   JSON (```json fences stripped before `JSON.parse`) constrained to one of the
   given categories. Falls back to `DEFAULT_CATEGORIES` (`lib/categories.ts`) if `categories` is
-  omitted or empty — that list is no longer hardcoded in this route.
+  omitted or empty — that list is no longer hardcoded in this route. **Opt-in vision assist**: if
+  the request body has `useVisionAssist: true` **and** a non-empty `imageDataUrl` (a base64 data
+  URL, built client-side from the row's `File` via `FileReader` — see `fileToDataURL` in
+  `app/page.tsx`), the prompt's `content` becomes a multimodal array (`text` + `image_url`) sent to
+  `OPENROUTER_VISION_MODEL` instead of `OPENROUTER_MODEL`, so the model can use visible logo/
+  letterhead/layout to help disambiguate the category. Silently falls back to text-only
+  classification if either condition isn't met — this is always the case for a PDF row, since
+  there's no single rendered page image on the client to send (the OCR route rasterizes PDF pages
+  server-side and doesn't keep the result).
 - **`lib/types.ts`**: the only cross-cutting module — `RowStatus`, `OcrExtractedData`,
   `ClassifyResult` are shared between both API routes and `app/page.tsx`. Change a field shape
   here first if extending the pipeline.
 - **`lib/categories.ts`**: `DEFAULT_CATEGORIES` (seed list) and `CATEGORIES_STORAGE_KEY` (the
   `localStorage` key the client persists its editable category list under) — shared between
   `app/page.tsx` and `/api/classify`.
+- **`lib/settings.ts`**: `AppSettings` (`visionOcrAssist`/`visionClassifyAssist`, both default
+  `false`), `DEFAULT_SETTINGS`, and `SETTINGS_STORAGE_KEY` — same persisted-to-`localStorage`
+  pattern as `lib/categories.ts`, read/written by the Settings dialog in `app/page.tsx`.
 - **`app/ai-test/route.ts`**: `GET /ai-test`, a plain-text connectivity check — confirms
   `OPENROUTER_API_KEY` is set and OpenRouter actually responds, without uploading a file through
   the full OCR pipeline first. Not linked from the UI; visit it directly (locally or on the
@@ -167,3 +188,141 @@ app/page.tsx ("use client")
 - Next.js is pinned to the 14.x line on purpose (matches the original spec); `npm audit` will
   show unresolved "high" advisories that only have fixes in Next 16 — see the note near the end
   of README.md before ever changing that.
+
+## Planned feature — demo/marketing layer (About modal, footer watermark, Full Vision page)
+
+**Context.** This repo doubles as a live demo shown to a client who ultimately wants the
+full-scale SaaS product described in `PRODUCT_VISION.md` (new file, sits next to this one —
+read it before starting any of the work below, it's the copy source for task 4). Right now the
+app is a bare OCR/classification tool with no framing: a first-time viewer has no way to tell
+"this is a feasibility slice" from "this is the whole product." This section adds a thin
+presentation layer around the existing tool to fix that — **no changes to the OCR/classify
+pipeline itself**, this is UI-only work layered on top of what `design.md` already describes.
+
+Do these four in order; 1–3 touch `app/page.tsx` and are small, 4 is a new route and is the
+bulk of the work.
+
+### 1. Update the Help dialog
+
+The existing Help `<dialog>` (see design.md's "Row detail modal, categories panel & help
+dialog" section) walks through upload → OCR → view → classify → categories → export. Keep that
+walkthrough, but add two things above or below it:
+- A short callout stating plainly that this is a feasibility demo of Phase 1 of a larger
+  product (one or two sentences, pull the framing from `PRODUCT_VISION.md` §10 — don't
+  editorialize beyond what that section says).
+- A line pointing at the new "About" button and the new "Full Product Vision" link/button (tasks
+  2 and 4) for anyone who wants more.
+
+Same `showModal()`/`close()` pattern as the other three toolbar dialogs — don't introduce a
+different modal mechanism for this one.
+
+### 2. New "About" toolbar button → modal
+
+Add an "About" button to the same toolbar row as Help/Categories/Settings, opening a fourth
+native `<dialog>` (`aboutDialogRef`, same show/close/backdrop-click pattern as the existing
+three — copy `helpDialogRef`'s wiring, don't reinvent it). Content, sourced from
+`PRODUCT_VISION.md` §1–4 (Hero, Problem, Vision, Who it's for):
+- Accorix wordmark/logo at the top (the same mark already used in the product's PRD —
+  place the asset at `public/accorix-logo.png` or `.svg` if not already present).
+- Tagline: "The Smarter Accounting Assistant."
+- 2–3 short paragraphs: what this specific demo is, what the full product is, who it's for.
+- A single CTA button/link to the Full Vision page (task 4) — `<Link href="/vision"
+  target="_blank" rel="noopener noreferrer">`. **Must open in a new tab**, not navigate the
+  current one — see the "why new tab" note under task 4, it's not a style preference.
+
+**"Theme-friendly" requirement:** this modal (and the Full Vision page) must not hardcode colors
+that only look right in one theme. If `app/globals.css` doesn't already expose a small set of CSS
+custom properties for the palette (background, surface, text, muted text, border, accent), add
+them there first and have every new component in this section reference `var(--...)` rather than
+literal hex values. That's what "theme-friendly" means here in practice: not a light/dark toggle
+that needs building today, but a component that won't need a rewrite the day one *is* added.
+Suggested starting palette (Accorix brand — same navy/gold/teal used in the product's other
+brand materials): `--accorix-navy: #16305C`, `--accorix-teal: #0F9D8D`, `--accorix-gold:
+#C9A227`, plus whatever neutral bg/surface/text/border values already exist in this repo's
+current styling (check `app/globals.css` before inventing new ones — reuse what's there).
+
+### 3. Footer watermark
+
+A slim, persistent footer at the bottom of the app shell (`app/layout.tsx`, so it appears on
+every route including the new `/vision` page — a single shared component, not duplicated
+markup). Unobtrusive: small text, muted color, not competing with the toolbar for attention.
+Content: developer attribution with a GitHub profile link and an email link (`mailto:`).
+
+**Both the GitHub URL and email are placeholders below — fill in the real values before
+shipping, they weren't provided:**
+```tsx
+<footer className="app-footer">
+  <span>Built by <a href="https://github.com/YOUR_USERNAME" target="_blank" rel="noopener noreferrer">YOUR_NAME</a></span>
+  <span aria-hidden="true">·</span>
+  <a href="mailto:you@example.com">you@example.com</a>
+</footer>
+```
+Style it consistent with the CSS-variable palette from task 2 — a one-line footer, small font,
+`var(--muted-text)`-equivalent color, links underlined only on hover.
+
+### 4. Full Vision landing page — new route, not a modal
+
+A real page at `app/vision/page.tsx` (→ `/vision`), separate from the tool. This is explicitly
+**not** a modal — the brief calls for a full scrollable landing experience with multiple
+sections, images, and scroll-triggered motion, which a `<dialog>` isn't suited for.
+
+**Why it must open in a new tab (task 2's CTA, and any other link into this page):** every
+table row, OCR result, and edit in this app lives only in React state in `app/page.tsx` — see
+design.md's row state machine section — there is no persistence. Navigating the same tab away to
+`/vision` and back would silently wipe any in-progress demo data. Always `target="_blank"` for
+links into this route from the tool.
+
+**Content structure** — one section per `PRODUCT_VISION.md` heading, in this order, each its own
+`<section>` so scroll-reveal can target them independently:
+1. Hero (§1) — logo, tagline, hero subhead explicitly framing this as "the full vision the demo
+   you just saw is a slice of," two CTAs (scroll down / back to demo).
+2. Problem (§2) — short, a few sentences plus maybe a simple 3-icon "today's tools are
+   scattered" visual.
+3. Vision / North Star (§3) — feature the human-in-the-loop callout from that section
+   prominently (styled like the callout box already used in the product's own PRD document —
+   left accent bar, tinted background, not just a plain paragraph).
+4. Roadmap (§5) — the three-phase table rendered as a horizontal (desktop) / vertical (mobile)
+   timeline, Phase 1 visually marked as "current" (this demo).
+5. Firm-side features (§6) — a responsive card grid, one card per bullet, short icon + heading +
+   one-line description per card (inline SVG icons are fine — keep this dependency-free, see
+   below).
+6. Admin panel (§7) — same card-grid treatment, visually distinguished from §6 (e.g. a different
+   accent color or a darker section background) since it's a different audience (Accorix staff,
+   not the firm).
+7. Pipeline (§8) — the seven-step flow, animated so each step reveals as the user scrolls past
+   it rather than rendering all at once; a simple connected vertical line with a node per step
+   reads clean on both desktop and mobile.
+8. Why not Xero/QuickBooks + Dext (§9) — a short, honest comparison; don't oversell, the source
+   content itself says to be honest about the trade-off.
+9. Demo status (§10) — plain-spoken "here's exactly what you're looking at today," linking back
+   to the actual tool (`target="_blank"` again, or a normal same-tab link since this is the
+   *intended* exit point of the page).
+10. Footer — reuse the task-3 footer component.
+
+**Scroll animation approach — no new dependency by default.** This repo deliberately stays
+light on dependencies (see the Next 14 pin, the "why not vision-LLM cross-check" trade-off in
+design.md, etc.); match that instinct here. Implement a small `useInView` hook wrapping
+`IntersectionObserver` (`threshold` around `0.15–0.2`, `once: true` so sections don't
+re-animate on scroll-up) that toggles a CSS class, and drive the actual motion with CSS
+transitions (`opacity` + `translateY(24px)` → `translateY(0)`, ~500–700ms, a slight stagger
+between sibling cards via `transition-delay`). A subtle parallax on the hero background
+(translate at a fraction of scroll speed) is a nice-to-have — implement with a scroll listener
+throttled via `requestAnimationFrame`, not on every raw scroll event. If richer motion is
+wanted later, `framer-motion` is a reasonable addition then — don't add it pre-emptively for
+this first pass.
+
+**Images.** No real product screenshots exist yet. Use the Accorix logo/mark (task 2's asset)
+in the hero and footer, and represent every feature card with a simple inline SVG icon
+(monoline/outline style, consistent stroke width, colored with the CSS-variable palette) rather
+than photography or stock images — keeps the page fast and avoids needing licensed assets for a
+demo. If real product screenshots become available later, swap them in per-section; don't block
+this pass on that.
+
+**Responsiveness.** This page will very likely be shown on a laptop in a client meeting but
+should not visibly break on a phone-width viewport either — stack the card grids to one column
+and the roadmap timeline to vertical below a reasonable breakpoint (e.g. `768px`), same as any
+other responsive work in this repo would be expected to do.
+
+**Verification.** `npm run build` must still pass with zero TS/ESLint errors (per the Commands
+section above) after adding the new route, hook, and footer component — this is a hard
+requirement for "done," same as every other change in this repo.

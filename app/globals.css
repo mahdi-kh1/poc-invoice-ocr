@@ -725,6 +725,80 @@ dialog[open] {
   color: var(--text-faint);
 }
 
+/* Settings dialog */
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-row-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-row-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.toggle-switch {
+  flex-shrink: 0;
+  display: inline-flex;
+  cursor: pointer;
+}
+.toggle-switch input {
+  /* Visually hidden but still focusable/clickable and reachable by its <label htmlFor>, so
+     keyboard and screen-reader behavior matches a normal checkbox despite the custom appearance. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.toggle-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent-gradient);
+  border-color: transparent;
+}
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(18px);
+  background: #06131a;
+}
+.toggle-switch input:focus-visible + .toggle-track {
+  box-shadow: var(--focus-ring);
+}
+
 /* Help dialog */
 .help-steps {
   margin: 0;

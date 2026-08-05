@@ -82,9 +82,19 @@ pending ──runOCR()──► ocr_running ──success──► ocr_done ─�
   survives page reloads, and it's sent as `categories` on every `/api/classify` call (see below).
   Categories are loaded from `localStorage` in a `useEffect` (not the initial `useState`) to avoid
   a server/client hydration mismatch, since `localStorage` isn't available during SSR.
-- The "Help" toolbar button opens a third `<dialog>` with a static numbered walkthrough of the
+- The "Settings" toolbar button opens a `<dialog>` with two toggle switches (`AppSettings` in
+  `lib/settings.ts`, `visionOcrAssist`/`visionClassifyAssist`, both default `false`) — same
+  `localStorage`-persisted pattern as Categories (`SETTINGS_STORAGE_KEY`, loaded in a `useEffect`
+  to avoid an SSR hydration mismatch). Both are opt-in because each adds an extra OpenRouter
+  round-trip on top of the normal pipeline. `visionOcrAssist` is sent as a `useVisionAssist` form
+  field on every `/api/ocr` call; `visionClassifyAssist` gates whether `runClassify()` also
+  base64-encodes the row's image (`fileToDataURL`, `FileReader.readAsDataURL`) and sends it as
+  `imageDataUrl` alongside `useVisionAssist` on `/api/classify` — skipped for PDF rows regardless
+  of the setting, since there's no single rendered page image to send client-side. See the API
+  contracts section below for what each route does with these fields.
+- The "Help" toolbar button opens a `<dialog>` with a static numbered walkthrough of the
   upload → OCR → view → classify → categories → export flow — pure copy, no state, same
-  `showModal()`/`close()` pattern as the other two dialogs.
+  `showModal()`/`close()` pattern as the other dialogs.
 - **Image zoom/pan** (`previewZoom` state, `imageWrapRef`/`dragState` refs): zoom buttons set
   `previewZoom` (0.5–4, step 0.25) which drives an inline `width: N%` style on the `<img>` once
   zoomed past 100%; below that, hovering shows a magnifier lens instead (`handleImageMouseMove`).
@@ -190,6 +200,21 @@ Implementation notes:
   fields that the "less confident" pass read correctly.) This roughly doubles per-page OCR time
   when both passes run — acceptable for this POC's accuracy-over-speed goal, but see the timeout
   architecture note below for why it can't blow the request budget even so.
+- **Opt-in third source: vision-model assist** (`visionTranscribe` in `route.ts`, off by default —
+  turned on via the Settings dialog's "AI vision assist for OCR" toggle, sent as a
+  `useVisionAssist` form field). When enabled, a vision-capable OpenRouter model
+  (`OPENROUTER_VISION_MODEL`, default `nvidia/nemotron-nano-12b-v2-vl:free` — chosen for its strong
+  OCRBench/DocVQA benchmark scores among currently-free vision models) is sent the resized image
+  directly and asked to transcribe visible text verbatim, labeled "OCR PASS C" and combined with
+  passes A/B the same way — deliberately kept as plain text transcription rather than a separate
+  structured-field-extraction call, so it reuses `extractReceipts`'s existing cross-referencing
+  prompt instead of needing a whole parallel field-merging codepath. The vision request is started
+  *before* the two Tesseract passes and only awaited at the end of `recognizeText`, so its network
+  latency overlaps with Tesseract's CPU-bound `worker_thread` computation instead of stacking on
+  top of it sequentially — without this, a third source usually wouldn't fit the same per-page
+  time budget (worker startup + two 18s-ceiling OCR passes already uses most of the 50s deadline in
+  the worst case). If the vision call fails or times out, it's silently dropped (`.catch(() => "")`)
+  — vision assist is strictly best-effort and never fails the whole request.
 - Tesseract only returns raw text, no structured fields — there's no field-unwrapping helper.
   Instead, each page's raw text is sent to the OpenRouter chat model (`extractReceipts` in
   `route.ts`) with a prompt asking for a JSON **array** of `{vendorName, invoiceNumber, ...}`
@@ -208,11 +233,19 @@ Implementation notes:
 
 Request: `application/json`
 ```json
-{ "vendorName": "string?", "totalAmount": "number?", "currency": "string?", "invoiceNumber": "string?", "rawText": "string?", "categories": "string[]?" }
+{ "vendorName": "string?", "totalAmount": "number?", "currency": "string?", "invoiceNumber": "string?", "rawText": "string?", "categories": "string[]?", "useVisionAssist": "boolean?", "imageDataUrl": "string?" }
 ```
 
 `categories` is the user-editable category list from the UI's "Categories" panel (see below);
 if omitted or empty the route falls back to `DEFAULT_CATEGORIES` from `lib/categories.ts`.
+
+`useVisionAssist`/`imageDataUrl` are opt-in (see the Settings dialog note above) — when
+`useVisionAssist` is `true` **and** `imageDataUrl` is a non-empty base64 data URL, the request to
+OpenRouter becomes multimodal (`content: [{type: "text", ...}, {type: "image_url", ...}]`) and
+uses `OPENROUTER_VISION_MODEL` instead of `OPENROUTER_MODEL`, so the model can see the actual
+document image (logo, letterhead, layout) alongside the extracted text fields when picking a
+category. Either condition missing silently falls back to the normal text-only prompt — this is
+always the case for a PDF row from the client (see the UI section above for why).
 
 Success (`200`):
 ```json
@@ -255,6 +288,7 @@ it reads the body as text and only then attempts `JSON.parse`, so a non-JSON res
 |---|---|---|
 | `OPENROUTER_API_KEY` | `/api/ocr`, `/api/classify` | sent as `Authorization: Bearer`; now required by both routes since `/api/ocr` also uses it for field extraction |
 | `OPENROUTER_MODEL` | `/api/ocr`, `/api/classify` | defaults to `openai/gpt-oss-20b:free` if unset |
+| `OPENROUTER_VISION_MODEL` | `/api/ocr`, `/api/classify` | defaults to `nvidia/nemotron-nano-12b-v2-vl:free`; only used when the client opts in via the Settings dialog (`useVisionAssist`) |
 
 Both routes treat a missing key as a normal, expected failure mode (POC users often won't have
 keys configured yet) — not an exceptional crash. Tesseract.js needs no API key or account at all.
@@ -378,13 +412,12 @@ constrains anything the API routes do:
   Tesseract time whenever both passes run, which is most of the time now that the gate is purely
   time-budget-based rather than confidence-based. Accepted trade-off for this POC's accuracy goal,
   but worth remeasuring if request latency on Vercel becomes a complaint again.
-- OCR is Tesseract-only — there's no vision-capable LLM cross-check of the raw image alongside the
-  text-based OCR passes. OpenRouter does have free vision-capable models (e.g.
-  `nvidia/nemotron-nano-12b-v2-vl:free`, benchmarked well on OCRBench/DocVQA specifically;
-  `google/gemma-4-31b-it:free` as a general-purpose alternative — always re-check
-  https://openrouter.ai/models?max_price=0 before relying on either still being free) that could
-  read the image directly and contribute a third source to combine with the two Tesseract passes,
-  the same way the two Tesseract passes are already combined rather than picked-between. Not
-  implemented: it roughly triples per-page latency and OpenRouter free-tier rate-limit pressure
-  (already observed hitting 429s from the shared free pool during normal testing in this session)
-  on top of the dual Tesseract passes, so it's a real trade-off to weigh, not a strict improvement.
+- Vision-model assist (both OCR and Classification — see the respective bullets above) is
+  implemented but **opt-in and off by default**, specifically because it adds real latency and
+  OpenRouter free-tier rate-limit pressure on top of the already-dual-pass Tesseract OCR (429s from
+  the shared free pool were directly observed during normal testing in this session, even before
+  adding a third/fourth call). A user who turns both toggles on for a batch of files should expect
+  to hit free-tier limits sooner than with the defaults. `google/gemma-4-31b-it:free` is a
+  reasonable general-purpose alternative to the default `OPENROUTER_VISION_MODEL` if the Nemotron
+  model stops being free or available — always re-check
+  https://openrouter.ai/models?max_price=0 (filter for vision/image input) before relying on either.
