@@ -421,3 +421,18 @@ constrains anything the API routes do:
   reasonable general-purpose alternative to the default `OPENROUTER_VISION_MODEL` if the Nemotron
   model stops being free or available — always re-check
   https://openrouter.ai/models?max_price=0 (filter for vision/image input) before relying on either.
+  **Directly measured, not just theorized:** with vision assist on, `nvidia/nemotron-nano-12b-v2-vl:free`
+  itself timed out on both the OCR pass and the classify call in back-to-back local tests, and on
+  the OCR side it also starved the *text* extraction call down to its `LLM_MIN_MS` floor, causing a
+  failure that wouldn't have happened with vision off. This is the concrete reason to leave both
+  toggles off unless specifically evaluating vision assist — turning them on trades a working
+  default pipeline for a currently-unreliable one, not a strict accuracy upgrade.
+- `OPENROUTER_TIMEOUT_MS` in `/api/ocr` was originally 25s despite this file's own note (right
+  above) that the free model can take up to ~48s — it was set early in this session before OCR's
+  actual speed was measured, and was left too conservative: OCR itself typically finishes in
+  ~1-2s, so by the time the extraction call starts there's usually ~48s of `REQUEST_DEADLINE_MS`
+  still unused, but the 25s ceiling threw that slack away regardless and was cutting off a real
+  share of responses that would otherwise have completed. Raised to 42s (and `/api/classify`'s
+  from 20s to 26s, since that route has no OCR overhead at all). `Math.min(OPENROUTER_TIMEOUT_MS,
+  deadline - Date.now())` at each call site still naturally shrinks this when something upstream
+  genuinely did eat into the budget — see the vision-assist bullet above for exactly that case.

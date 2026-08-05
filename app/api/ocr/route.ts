@@ -39,8 +39,14 @@ const MAX_PDF_PAGES = 15;
 // from ~2s to ~48s for the exact same prompt back to back. Vercel kills the whole function with a
 // bare HTML 504 if maxDuration is exceeded, bypassing our JSON error handling entirely, so this
 // call is aborted well before that ceiling — a slow model response becomes a normal, friendly
-// JSON error instead of an opaque platform-level timeout.
-const OPENROUTER_TIMEOUT_MS = 25_000;
+// JSON error instead of an opaque platform-level timeout. This used to be 25s, which — despite the
+// ~48s figure right above it — was cutting off a real share of responses that would otherwise have
+// succeeded: OCR itself is fast in practice (worker startup + both Tesseract passes typically
+// finish in ~1-2s), so by the time this call starts there's usually ~48s of REQUEST_DEADLINE_MS
+// still unused, but the old 25s ceiling threw that slack away regardless. Raised to use most of
+// what's actually available; `Math.min(OPENROUTER_TIMEOUT_MS, deadline - Date.now())` at the call
+// site still naturally shrinks this when OCR genuinely did eat into the budget.
+const OPENROUTER_TIMEOUT_MS = 42_000;
 
 // Tesseract itself has no built-in timeout — a large/noisy image can make `recognize()` run far
 // longer than expected, especially on Vercel's weaker/shared CPU vs. a local dev machine. Racing
@@ -64,7 +70,11 @@ const WORKER_STARTUP_TIMEOUT_MS = 20_000;
 // pressure. Override with OPENROUTER_VISION_MODEL if this one stops being free — always check
 // https://openrouter.ai/models?max_price=0 (filter for vision/image input) before relying on it.
 const DEFAULT_VISION_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free";
-const VISION_TIMEOUT_MS = 25_000;
+// Same reasoning as OPENROUTER_TIMEOUT_MS above — the vision call starts concurrently with the
+// Tesseract passes (see recognizeText), so raising its ceiling doesn't cost anything extra when
+// there's slack; visionBudget's own `deadline - Date.now() - LLM_MIN_MS` still caps it correctly
+// when there isn't.
+const VISION_TIMEOUT_MS = 42_000;
 
 // Single-page budget leaves ~10s of the 60s maxDuration for worker startup, PDF rasterization,
 // downscaling, and network overhead — enough for one page/image to always fail as JSON instead of

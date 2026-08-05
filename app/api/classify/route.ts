@@ -7,8 +7,10 @@ export const maxDuration = 30;
 
 // See the matching constant in app/api/ocr/route.ts — the free OpenRouter model's response time
 // is highly variable, and Vercel's own timeout kill produces an HTML 504 instead of our JSON error
-// format if this isn't aborted first.
-const OPENROUTER_TIMEOUT_MS = 20_000;
+// format if this isn't aborted first. Unlike /api/ocr, this route has no OCR/worker overhead at
+// all — it's a single JSON round-trip — so nearly the whole 30s maxDuration can go to this call;
+// 20s was leaving real slack unused and cutting off responses that would have succeeded.
+const OPENROUTER_TIMEOUT_MS = 26_000;
 
 // Opt-in via the `useVisionAssist` request field (see lib/settings.ts) — sends the receipt/invoice
 // image alongside the extracted fields so visual cues (logo, letterhead, layout) can help pick a
