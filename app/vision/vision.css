@@ -1,0 +1,178 @@
+/* Styles for the /vision landing page only — this stylesheet is imported by app/vision/page.tsx,
+   never by the OCR tool itself, so it's kept separate from globals.css rather than bloating it.
+   Reuses the neutral tokens (--bg, --text, --border, …) and Accorix brand tokens
+   (--accorix-navy, --accorix-teal, --accorix-gold) already defined in globals.css. */
+
+html {
+  scroll-behavior: smooth;
+}
+
+.vision-page {
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+/* --- Reveal-on-scroll utility (driven by lib/useInView.ts) ------------------------------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 650ms ease, transform 650ms ease;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* --- Hero ---------------------------------------------------------------------------------- */
+.vision-hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--accorix-navy-deep) 0%, var(--bg) 100%);
+}
+
+.vision-hero-bg {
+  position: absolute;
+  inset: -10% -10% -10% -10%;
+  pointer-events: none;
+  background:
+    radial-gradient(480px 480px at 18% 20%, rgba(15, 157, 141, 0.22), transparent 70%),
+    radial-gradient(560px 560px at 85% 75%, rgba(201, 162, 39, 0.16), transparent 70%);
+  will-change: transform;
+}
+
+.vision-hero-content {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  animation: vision-fade-up 800ms ease both;
+}
+
+.vision-hero-logo {
+  width: 220px;
+  height: auto;
+  margin-bottom: 4px;
+}
+
+.vision-eyebrow {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accorix-gold);
+}
+
+.vision-hero-headline {
+  margin: 0;
+  font-size: clamp(1.7rem, 4vw, 2.6rem);
+  line-height: 1.25;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.vision-hero-subhead {
+  margin: 0;
+  max-width: 620px;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.vision-hero-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 8px;
+  animation: vision-fade-up 800ms ease 150ms both;
+}
+
+.vision-btn {
+  appearance: none;
+  border-radius: var(--radius-sm);
+  padding: 13px 24px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: filter 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+}
+.vision-btn:active {
+  transform: translateY(1px);
+}
+.vision-btn-primary {
+  border: none;
+  background: var(--accorix-teal);
+  color: #ffffff;
+}
+.vision-btn-primary:hover {
+  filter: brightness(1.1);
+}
+.vision-btn-secondary {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+}
+.vision-btn-secondary:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+@keyframes vision-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vision-hero-content,
+  .vision-hero-ctas,
+  .reveal {
+    animation: none;
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- Temporary stub for the not-yet-built sections (removed once sections 2–10 land) ------- */
+.vision-stub {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .vision-hero {
+    padding: 60px 20px;
+  }
+  .vision-hero-logo {
+    width: 170px;
+  }
+}

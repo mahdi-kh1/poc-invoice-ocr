@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
 import type { RowStatus } from "@/lib/types";
 import { DEFAULT_CATEGORIES, CATEGORIES_STORAGE_KEY } from "@/lib/categories";
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, type AppSettings } from "@/lib/settings";
@@ -141,9 +142,11 @@ export default function Home() {
   const categoriesDialogRef = useRef<HTMLDialogElement>(null);
   const helpDialogRef = useRef<HTMLDialogElement>(null);
   const settingsDialogRef = useRef<HTMLDialogElement>(null);
+  const aboutDialogRef = useRef<HTMLDialogElement>(null);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
   const selectedRow = rows.find((r) => r.id === selectedRowId) || null;
@@ -238,6 +241,16 @@ export default function Home() {
       dialog.close();
     }
   }, [settingsOpen]);
+
+  useEffect(() => {
+    const dialog = aboutDialogRef.current;
+    if (!dialog) return;
+    if (aboutOpen) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [aboutOpen]);
 
   useEffect(() => {
     setPreviewZoom(1);
@@ -511,6 +524,8 @@ export default function Home() {
   return (
     <main id="main-content" className="app-shell">
       <header className="app-header">
+        {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+        <img src="/demo-accorix-logo.svg" alt="demo-Accorix" className="app-logo" />
         <h1 className="app-title">POC — Invoice &amp; Receipt Extraction and Classification</h1>
         <p className="app-subtitle">
           Step 1: OCR via Tesseract.js (local) + field extraction via OpenRouter &nbsp;|&nbsp; Step 2:
@@ -552,6 +567,9 @@ export default function Home() {
         </button>
         <button className="btn" onClick={() => setSettingsOpen(true)}>
           Settings
+        </button>
+        <button className="btn" onClick={() => setAboutOpen(true)}>
+          About
         </button>
         <button className="btn" onClick={() => setHelpOpen(true)}>
           Help
@@ -912,6 +930,52 @@ export default function Home() {
       </dialog>
 
       <dialog
+        ref={aboutDialogRef}
+        className="about-dialog"
+        onClose={() => setAboutOpen(false)}
+        onClick={closeDialogOnBackdropClick}
+        aria-labelledby="about-dialog-title"
+      >
+        <div className="dialog-body">
+          <div className="dialog-header">
+            <h2 id="about-dialog-title" className="dialog-title">
+              About Accorix
+            </h2>
+            <button
+              className="btn btn-icon"
+              aria-label="Close dialog"
+              onClick={() => aboutDialogRef.current?.close()}
+            >
+              ×
+            </button>
+          </div>
+          <div className="dialog-content dialog-content-stack about-dialog-content">
+            {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset, no benefit from next/image here */}
+            <img src="/accorix-logo.svg" alt="Accorix" className="about-logo" />
+            <p className="about-tagline">The Smarter Accounting Assistant</p>
+            <p>
+              What you're using right now is a <strong>feasibility demo</strong> of Phase 1 of
+              Accorix — a cloud accounting platform built for firms who manage many clients at once.
+              It proves out whether free/local OCR plus an LLM can reliably turn a messy real-world
+              document into structured, categorised data.
+            </p>
+            <p>
+              The full product is a direct replacement for Xero/QuickBooks, not a bolt-on OCR tool —
+              AI is woven in from the first uploaded receipt through to the filed VAT return, with an
+              accountant always the one who signs off on anything that matters.
+            </p>
+            <p>
+              It's built for accounting firms and bookkeeping practices in the UK managing multiple
+              clients, so each client's books get done faster and with fewer manual errors.
+            </p>
+            <Link href="/vision" target="_blank" rel="noopener noreferrer" className="btn btn-primary about-cta">
+              See the Full Product Vision →
+            </Link>
+          </div>
+        </div>
+      </dialog>
+
+      <dialog
         ref={helpDialogRef}
         className="help-dialog"
         onClose={() => setHelpOpen(false)}
@@ -932,6 +996,12 @@ export default function Home() {
             </button>
           </div>
           <div className="dialog-content dialog-content-stack">
+            <p className="help-callout">
+              This is a <strong>feasibility demo</strong> of Phase 1 of a larger product, Accorix —
+              it proves out whether free/local OCR plus an LLM can reliably turn a messy real-world
+              document into structured, categorised data, before the full multi-tenant platform gets
+              built around it.
+            </p>
             <ol className="help-steps">
               <li>
                 <strong>Upload files.</strong> Add one or more invoice/receipt images (jpg, png, …) or
@@ -968,6 +1038,11 @@ export default function Home() {
             <p className="app-subtitle">
               This is a feasibility proof-of-concept — OCR and classification accuracy will vary by
               document quality and the free model in use.
+            </p>
+            <p className="app-subtitle">
+              Curious what the finished product looks like? Click <strong>About</strong> in the
+              toolbar for a quick summary, or open the <strong>Full Product Vision</strong> page from
+              there for the complete roadmap.
             </p>
           </div>
         </div>

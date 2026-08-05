@@ -25,6 +25,14 @@
   --radius-sm: 8px;
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* Accorix brand palette — used only by the demo/marketing layer (About modal, /vision page,
+     footer wordmark), never by the OCR tool's own UI. Kept as custom properties (not literal hex
+     values in components) so a future light/dark toggle only has to change values here. */
+  --accorix-navy: #16305c;
+  --accorix-navy-deep: #0e1f3d;
+  --accorix-teal: #0f9d8d;
+  --accorix-gold: #c9a227;
 }
 
 * {
@@ -117,8 +125,32 @@ input:focus-visible,
   padding: 32px 24px 64px;
 }
 
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 24px 24px;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+.app-footer a {
+  color: var(--text-faint);
+  text-decoration: none;
+}
+.app-footer a:hover {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
 .app-header {
   margin-bottom: 28px;
+}
+
+.app-logo {
+  height: 42px;
+  width: auto;
+  margin-bottom: 12px;
 }
 
 .app-title {
@@ -799,7 +831,63 @@ dialog[open] {
   box-shadow: var(--focus-ring);
 }
 
+/* About dialog */
+.about-dialog {
+  width: min(92vw, 520px);
+}
+.about-dialog-content {
+  align-items: center;
+  text-align: center;
+  padding-top: 28px;
+  padding-bottom: 28px;
+}
+.about-dialog-content p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.about-dialog-content p strong {
+  color: var(--text);
+}
+.about-logo {
+  width: 160px;
+  height: auto;
+}
+.about-tagline {
+  margin: -6px 0 4px;
+  font-size: 0.82rem;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  color: var(--accorix-gold);
+}
+.about-cta {
+  margin-top: 6px;
+  background: var(--accorix-teal);
+  color: #ffffff;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-block;
+}
+.about-cta:hover {
+  filter: brightness(1.1);
+}
+
 /* Help dialog */
+.help-callout {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+.help-callout strong {
+  color: var(--text);
+}
+
 .help-steps {
   margin: 0;
   padding-left: 22px;
