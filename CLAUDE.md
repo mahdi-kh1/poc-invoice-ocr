@@ -189,7 +189,22 @@ app/page.tsx ("use client")
   show unresolved "high" advisories that only have fixes in Next 16 — see the note near the end
   of README.md before ever changing that.
 
-## Planned feature — demo/marketing layer (About modal, footer watermark, Full Vision page)
+## Demo/marketing layer (About modal, footer watermark, Full Vision page) — implemented
+
+**Status: done.** All four tasks below have shipped — the app itself was also renamed to
+demo-Accorix (browser tab title, `package.json` name, new favicon at `app/icon.svg`) as part of
+the same effort, and `/vision` now has all 10 sections, not just the hero. Kept the original
+task brief below as-is since it's still the accurate rationale for *why* each piece looks the way
+it does — treat it as implementation notes, not a to-do list. Where things live:
+- `app/page.tsx`: the About dialog (`aboutDialogRef`), the Help dialog's feasibility-demo callout,
+  and the `demo-accorix-logo.svg` mark in the header.
+- `app/layout.tsx`: the shared footer.
+- `app/vision/`: `page.tsx` (Server Component, exports `metadata`) renders `VisionPageClient.tsx`
+  ("use client", holds the hero's parallax listener), which composes ten section components under
+  `app/vision/sections/` (`Hero`, `Problem`, `VisionSection`, `Roadmap`, `FirmFeatures`,
+  `AdminPanel`, `Pipeline`, `Comparison`, `DemoStatus` — Footer is the shared layout footer, not a
+  10th component). `Reveal.tsx` wraps `lib/useInView.ts` for the scroll-reveal treatment;
+  `icons.tsx` holds the shared monoline SVG icon set every section draws from.
 
 **Context.** This repo doubles as a live demo shown to a client who ultimately wants the
 full-scale SaaS product described in `PRODUCT_VISION.md` (new file, sits next to this one —

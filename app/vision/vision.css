@@ -155,17 +155,380 @@ html {
   }
 }
 
-/* --- Temporary stub for the not-yet-built sections (removed once sections 2–10 land) ------- */
-.vision-stub {
-  min-height: 60vh;
+/* --- Shared section scaffolding ------------------------------------------------------------ */
+.vision-section {
+  padding: 88px 24px;
+}
+.vision-section-tinted {
+  background: var(--bg-elevated);
+}
+.vision-section-inner {
+  max-width: 880px;
+  margin: 0 auto;
+}
+.vision-section-title {
+  margin: 0 0 14px;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-weight: 700;
+  color: var(--text);
+}
+.vision-section-lede {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+.vision-section-body {
+  margin: 18px 0 0;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* --- Problem (§2) — scattered-tools visual ------------------------------------------------- */
+.vision-scattered {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin: 36px 0;
+}
+.vision-scattered-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 150px;
+}
+.vision-scattered-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--accorix-teal);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 60px 24px;
-  text-align: center;
+}
+.vision-scattered-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.vision-scattered-label {
+  margin: 10px 0 2px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.vision-scattered-detail {
+  margin: 0;
+  font-size: 0.76rem;
   color: var(--text-faint);
+}
+.vision-scattered-break {
+  font-size: 1.4rem;
+  color: var(--text-faint);
+  align-self: center;
+}
+
+/* --- Vision / North Star (§3) — callout ---------------------------------------------------- */
+.vision-callout {
+  margin-top: 28px;
+  padding: 20px 24px;
+  border-left: 4px solid var(--accorix-gold);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.vision-callout-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+  color: var(--accorix-gold);
+}
+.vision-callout-body {
+  margin: 0;
   font-size: 0.9rem;
-  border-top: 1px solid var(--border);
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* --- Roadmap (§5) — timeline: horizontal (desktop) / vertical (mobile) via grid columns ---- */
+.vision-timeline {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+}
+.vision-timeline-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.vision-timeline-node {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text-muted);
+}
+.vision-timeline-item.is-current .vision-timeline-node {
+  background: var(--accorix-teal);
+  border-color: var(--accorix-teal);
+  color: #ffffff;
+}
+.vision-timeline-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.vision-timeline-when {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.vision-timeline-heading h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  color: var(--text);
+}
+.vision-badge-current {
+  background: var(--accorix-teal);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.vision-timeline-content ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* --- Card grid (§6 Firm features, §7 Admin panel) ------------------------------------------ */
+.vision-card-grid {
+  max-width: 1080px;
+  margin: 40px auto 0;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.vision-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vision-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: rgba(15, 157, 141, 0.12);
+  color: var(--accorix-teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vision-card-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.vision-card-title {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.vision-card-body {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* --- Admin panel (§7) — navy section, distinct audience ------------------------------------ */
+.vision-section-navy {
+  background: var(--accorix-navy-deep);
+}
+.vision-eyebrow-onnavy {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accorix-gold);
+}
+.vision-title-onnavy {
+  color: #ffffff;
+}
+.vision-lede-onnavy {
+  color: rgba(231, 235, 243, 0.72);
+}
+.vision-card-navy {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.vision-card-icon-gold {
+  background: rgba(201, 162, 39, 0.16);
+  color: var(--accorix-gold);
+}
+
+/* --- Pipeline (§8) — connected vertical step flow ------------------------------------------- */
+.vision-pipeline {
+  list-style: none;
+  margin: 44px auto 0;
+  padding: 0;
+  max-width: 600px;
+}
+.vision-pipeline-item {
+  position: relative;
+}
+.vision-pipeline-item:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 23px;
+  top: 48px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+}
+.vision-pipeline-step {
+  position: relative;
+  padding: 0 0 40px 64px;
+  min-height: 48px;
+}
+.vision-pipeline-item:last-child .vision-pipeline-step {
+  padding-bottom: 0;
+}
+.vision-pipeline-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accorix-teal);
+  color: var(--accorix-teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vision-pipeline-node svg {
+  width: 22px;
+  height: 22px;
+}
+.vision-pipeline-step.is-future .vision-pipeline-node {
+  border-color: var(--border-strong);
+  color: var(--text-faint);
+}
+.vision-pipeline-text h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.vision-pipeline-text p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.vision-badge-future {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+}
+
+/* --- Comparison (§9) ------------------------------------------------------------------------ */
+.vision-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 28px 0;
+}
+.vision-compare-col {
+  padding: 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.vision-compare-col-accent {
+  border-color: rgba(15, 157, 141, 0.4);
+  background: rgba(15, 157, 141, 0.06);
+}
+.vision-compare-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.vision-compare-col-accent .vision-compare-icon {
+  color: var(--accorix-teal);
+}
+.vision-compare-col h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--text);
+}
+.vision-compare-col p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* --- Demo status (§10) ----------------------------------------------------------------------- */
+.vision-demo-status .vision-btn {
+  margin-top: 8px;
+}
+
+/* --- Responsive -------------------------------------------------------------------------------
+   768px matches the breakpoint used elsewhere in this repo (see globals.css). */
+@media (max-width: 768px) {
+  .vision-timeline {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .vision-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .vision-compare {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -174,5 +537,18 @@ html {
   }
   .vision-hero-logo {
     width: 170px;
+  }
+  .vision-section {
+    padding: 64px 20px;
+  }
+  .vision-card-grid {
+    grid-template-columns: 1fr;
+    padding: 0;
+  }
+  .vision-scattered {
+    gap: 10px;
+  }
+  .vision-scattered-break {
+    display: none;
   }
 }
