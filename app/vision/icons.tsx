@@ -264,3 +264,30 @@ export function IconArrowRight({ className }: { className?: string }) {
     </IconBase>
   );
 }
+
+export function IconTrendingUp({ className }: { className?: string }) {
+  return (
+    <IconBase className={className}>
+      <path d="M3.5 17 10 10.5l4 4 6.5-6.5" />
+      <path d="M15.5 7.5h5v5" />
+    </IconBase>
+  );
+}
+
+export function IconSettings({ className }: { className?: string }) {
+  return (
+    <IconBase className={className}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3.5v2.3M12 18.2v2.3M20.5 12h-2.3M5.8 12H3.5M17.8 6.2l-1.6 1.6M7.8 16.2l-1.6 1.6M17.8 17.8l-1.6-1.6M7.8 7.8 6.2 6.2" />
+    </IconBase>
+  );
+}
+
+export function IconKey({ className }: { className?: string }) {
+  return (
+    <IconBase className={className}>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11 12l8.5-8.5M17 6l2 2M14 9l2 2" />
+    </IconBase>
+  );
+}

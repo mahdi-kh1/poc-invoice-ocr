@@ -106,12 +106,50 @@ learned rules on top of it).
 
 ## 7. What we run behind the scenes (internal admin panel)
 
-The same platform that firms use is managed, for Accorix itself, through an internal panel that
-covers: firm accounts and their usage/billing status, global and industry-specific category
-templates, AI model/prompt versioning with per-firm cost and accuracy monitoring, subscription
-plans and invoicing, support tooling tied directly to a firm's live data for fast diagnosis, and
-a full audit trail of every admin action (especially anything touching a firm's data, like
-support impersonation).
+The same platform that firms use is managed, for Accorix itself, through an internal admin
+panel — every page and control in it maps to one of these eleven areas:
+
+- **Dashboard:** live KPIs — ARR/MRR, active firms, churn, trial-to-paid conversion, OCR volume
+  processed today/this month, infra cost, and system health (OCR error rate, avg processing time,
+  open support tickets).
+- **Firms management:** search/filter firms by status (Trial/Active/Suspended/Cancelled/Overdue);
+  a firm detail page (profile, plan, usage vs. cap, staff, sub-clients, activity history, internal
+  notes); controlled impersonation for troubleshooting (fully audit-logged, notifies the firm);
+  suspend, renew trial, manual plan change, issue refund, export/delete data under GDPR.
+- **Global user management:** search any user across the whole platform regardless of firm; view
+  role and MFA status; force logout; reset password; block a suspicious account.
+- **Category management:** standard UK default categories mapped to VAT codes, plus
+  industry-specific templates (food retail, construction, restaurant, etc.); versioned, with
+  rollback if a change goes wrong.
+- **AI Ops:** a model registry (OCR, categorisation, chat assistant — each with provider and
+  version); prompt version management and A/B testing; per-model, per-firm cost and accuracy
+  monitoring (for profitability analysis); a manual-correction-rate dashboard by firm and
+  category (the key signal for model improvement); OCR engine fallback for handwritten or
+  low-quality documents.
+- **Billing & subscriptions:** define/edit plans and caps without a redeploy; invoices, payment
+  status, dunning (retry failed payment); discount codes and lifetime offers for early adopters;
+  VAT calculation/reporting on Accorix's own SaaS sales to UK customers.
+- **Business reports & analytics:** revenue report, cohort analysis, retention, and a
+  signup → activation → payment funnel.
+- **Helpdesk:** a ticket queue prioritised by plan (higher SLA for higher plans), connected
+  directly to that firm's data and errors for faster diagnosis.
+- **System settings & integrations:** API key management for Open Banking providers (Phase 1
+  reconciliation); connections to third-party tax/accounting software (Phase 2); HMRC/MTD
+  credential management (Phase 3); an editable tax rules engine (VAT rates, the £90,000
+  registration threshold, effective dates, versioned); management of the tax-saving tips/offers
+  content shown to accountants.
+- **Audit log & security:** full logging of every admin action, especially impersonation,
+  plan/access changes, and data exports; automatic alerts for unusual patterns (e.g. a high-volume
+  data export in a short window).
+- **Internal RBAC:** custom internal roles with precise, per-role permission assignment,
+  independent of firm-side roles.
+
+**Internal staff roles** (who actually uses this panel): **Super Admin** (full access to every
+section, manages other roles and critical settings), **Product/AI Admin** (AI models, prompts,
+categorisation, tax rules), **Billing/Finance Admin** (plans, invoices, discounts, financial
+reports), **Support Agent** (firm accounts via controlled impersonation, support tickets),
+**Growth/Sales Admin** (trials, leads, discount codes, trial extensions), and — Phase 3 only —
+**Compliance Officer** (audits filing logs, monitors HMRC integrity).
 
 ## 8. The pipeline, visually
 

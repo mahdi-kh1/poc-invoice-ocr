@@ -397,6 +397,39 @@ html {
   color: var(--accorix-gold);
 }
 
+.vision-roles-wrap {
+  margin-top: 48px;
+}
+.vision-roles-title {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.vision-roles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 28px;
+}
+.vision-roles-item {
+  padding: 14px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.vision-roles-item dt {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.vision-roles-item dd {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
 /* --- Pipeline (§8) — connected vertical step flow ------------------------------------------- */
 .vision-pipeline {
   list-style: none;
@@ -529,6 +562,9 @@ html {
   .vision-compare {
     grid-template-columns: 1fr;
   }
+  .vision-roles {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -550,5 +586,8 @@ html {
   }
   .vision-scattered-break {
     display: none;
+  }
+  .vision-roles {
+    grid-template-columns: 1fr;
   }
 }

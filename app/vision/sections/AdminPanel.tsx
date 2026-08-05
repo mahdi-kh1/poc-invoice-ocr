@@ -1,37 +1,86 @@
 import { Reveal } from "../Reveal";
-import { IconBuilding, IconTag, IconCpu, IconCreditCard, IconHeadset, IconFileCheck } from "../icons";
+import {
+  IconChart,
+  IconBuilding,
+  IconUsers,
+  IconTag,
+  IconCpu,
+  IconCreditCard,
+  IconTrendingUp,
+  IconHeadset,
+  IconSettings,
+  IconFileCheck,
+  IconKey,
+} from "../icons";
 
+// One card per subsection of the internal admin panel — mirrors the PRD's own §4.1-4.11
+// structure exactly, rather than a condensed marketing summary, since this section is meant to
+// answer "how do the admin pages and controls actually work."
 const ADMIN_FEATURES = [
   {
+    icon: IconChart,
+    title: "Dashboard",
+    body: "Live KPIs: ARR/MRR, active firms, churn, trial-to-paid conversion, OCR volume, and system health.",
+  },
+  {
     icon: IconBuilding,
-    title: "Firm accounts & billing status",
-    body: "Every firm's usage, plan, and account health in one view.",
+    title: "Firms management",
+    body: "Search and filter firms by status, drill into usage vs. plan cap, and act — suspend, renew, refund, or export/delete data under GDPR. Impersonation for troubleshooting is fully audit-logged and notifies the firm.",
+  },
+  {
+    icon: IconUsers,
+    title: "Global user management",
+    body: "Search any user across the whole platform, view role and MFA status, force logout, reset a password, or block a suspicious account.",
   },
   {
     icon: IconTag,
-    title: "Category templates",
-    body: "Global and industry-specific categorisation templates, versioned.",
+    title: "Category management",
+    body: "Standard UK categories mapped to VAT codes, plus industry-specific templates — versioned, with rollback if a change goes wrong.",
   },
   {
     icon: IconCpu,
-    title: "AI model & prompt versioning",
-    body: "Per-firm cost and accuracy monitoring for every model in production.",
+    title: "AI Ops",
+    body: "Model and prompt versioning with A/B testing, per-firm cost and accuracy monitoring, and a fallback OCR engine for handwritten or low-quality documents.",
   },
   {
     icon: IconCreditCard,
-    title: "Subscription plans & invoicing",
-    body: "Manage pricing tiers, invoices, and billing without a redeploy.",
+    title: "Billing & subscriptions",
+    body: "Edit plans and caps without a redeploy, manage invoices and failed-payment retries, run discount codes and lifetime offers.",
+  },
+  {
+    icon: IconTrendingUp,
+    title: "Business reports & analytics",
+    body: "Revenue, cohort, and retention reports, plus a signup → activation → payment funnel.",
   },
   {
     icon: IconHeadset,
-    title: "Support tooling",
-    body: "Tied directly to a firm's live data for fast diagnosis, not a black box.",
+    title: "Helpdesk",
+    body: "Tickets prioritised by plan tier, linked directly to that firm's live data for faster diagnosis.",
+  },
+  {
+    icon: IconSettings,
+    title: "System settings & integrations",
+    body: "API keys for Open Banking, tax/accounting software connections, HMRC/MTD credentials, and an editable VAT rules engine.",
   },
   {
     icon: IconFileCheck,
-    title: "Full audit trail",
-    body: "Every admin action logged — especially anything touching a firm's data.",
+    title: "Audit log & security",
+    body: "Every admin action logged — especially impersonation, access changes, and data exports — with automatic alerts on unusual patterns.",
   },
+  {
+    icon: IconKey,
+    title: "Internal RBAC",
+    body: "Custom internal roles with precise permissions per role, entirely independent of firm-side roles.",
+  },
+];
+
+const STAFF_ROLES = [
+  { name: "Super Admin", scope: "Full access to every panel section; manages other roles and critical settings." },
+  { name: "Product / AI Admin", scope: "Manages AI models, prompts, categorisation, and tax rules." },
+  { name: "Billing / Finance Admin", scope: "Manages plans, invoices, discounts, and financial reports." },
+  { name: "Support Agent", scope: "Views firm accounts (controlled impersonation) and manages support tickets." },
+  { name: "Growth / Sales Admin", scope: "Manages trials, leads, discount codes, and trial extensions." },
+  { name: "Compliance Officer", scope: "Audits filing logs and monitors HMRC integrity.", future: true },
 ];
 
 export function AdminPanel() {
@@ -44,7 +93,7 @@ export function AdminPanel() {
         </h2>
         <p className="vision-section-lede vision-lede-onnavy">
           The same platform that firms use is managed, for Accorix itself, through an internal
-          admin panel.
+          admin panel — every page and control in it maps to one of these eleven areas.
         </p>
       </Reveal>
       <div className="vision-card-grid">
@@ -58,6 +107,20 @@ export function AdminPanel() {
           </Reveal>
         ))}
       </div>
+      <Reveal className="vision-section-inner vision-roles-wrap">
+        <h3 className="vision-roles-title vision-title-onnavy">Who has access to what</h3>
+        <dl className="vision-roles">
+          {STAFF_ROLES.map(({ name, scope, future }) => (
+            <div className="vision-roles-item" key={name}>
+              <dt className="vision-title-onnavy">
+                {name}
+                {future && <span className="vision-badge-future">Phase 3</span>}
+              </dt>
+              <dd className="vision-lede-onnavy">{scope}</dd>
+            </div>
+          ))}
+        </dl>
+      </Reveal>
     </section>
   );
 }
