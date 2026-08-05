@@ -476,15 +476,24 @@ export async function POST(req: NextRequest) {
     // logic below would ever run, no matter how it's tuned. Race it explicitly so a stuck startup
     // becomes the same friendly JSON error as every other failure mode here.
     let worker: Worker;
+    let lastStartupStatus = "not started";
     try {
       worker = await Promise.race([
         createWorker(["eng"], undefined, {
           cachePath: TESSERACT_CACHE_PATH,
           langPath: LANG_DATA_PATH,
+          logger: (m: { status?: string; progress?: number }) => {
+            lastStartupStatus = `${m.status ?? "?"} (${Math.round((m.progress ?? 0) * 100)}%)`;
+          },
         }),
         new Promise<never>((_, reject) =>
           setTimeout(
-            () => reject(new Error("The OCR engine failed to start in time — please try again in a moment.")),
+            () =>
+              reject(
+                new Error(
+                  `The OCR engine failed to start in time (stuck at: ${lastStartupStatus}) — please try again in a moment.`
+                )
+              ),
             WORKER_STARTUP_TIMEOUT_MS
           )
         ),
