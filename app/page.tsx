@@ -373,6 +373,12 @@ export default function Home() {
           ...row,
           id: results.length === 1 ? row.id : `${row.id}-${idx}`,
           status: "ocr_done",
+          // Tesseract text still came back even when every fallback AI model failed to extract
+          // structured fields (see extractionWarning in app/api/ocr/route.ts) — surface that
+          // through the same "Show Error" banner used for hard failures rather than silently
+          // leaving every field blank with no explanation. The row still counts as ocr_done so
+          // it's editable/classifiable, not stuck in an error state.
+          error: data.extractionWarning || undefined,
           sourceLabel:
             results.length > 1
               ? data.pageNumber

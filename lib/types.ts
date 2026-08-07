@@ -30,6 +30,13 @@ export interface OcrExtractedData {
   rawText: string;
   /** 1-based PDF page this receipt was read from, or null for a plain image upload. */
   pageNumber: number | null;
+  /**
+   * Set when Tesseract OCR succeeded but every model in the fallback chain failed to extract
+   * structured fields (all fields above come back null in that case) — the raw OCR text is still
+   * usable and returned rather than failing the whole page, but the client should surface this so
+   * the user knows why the fields are empty and can fill them in manually before classifying.
+   */
+  extractionWarning: string | null;
 }
 
 export interface ClassifyResult {

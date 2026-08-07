@@ -74,10 +74,14 @@ async function classifyOnce(
             },
           ],
           temperature: 0.1,
-          // See the matching comment in app/api/ocr/route.ts's extractReceipts — without this the
-          // provider default budget applies, and a reasoning model's internal reasoning tokens
-          // draw from that same budget before any output text is produced.
+          // See the matching comments in app/api/ocr/route.ts's extractReceipts — without
+          // max_tokens the provider default budget applies, and without capping reasoning effort
+          // a reasoning-capable model can spend that whole budget on invisible "thinking" and
+          // emit zero actual output. "low" is the safest universal setting — {enabled:false} 400s
+          // on gpt-oss-20b, but every model in the fallback chain accepts "low", confirmed
+          // directly against the OpenRouter API.
           max_tokens: 512,
+          reasoning: { effort: "low" },
         }),
         signal: controller.signal,
         cache: "no-store",

@@ -110,7 +110,8 @@ function toNumberOrNull(v: unknown): number | null {
 function buildExtractedData(
   fields: Record<string, unknown>,
   rawText: string,
-  pageNumber: number | null
+  pageNumber: number | null,
+  extractionWarning: string | null = null
 ): OcrExtractedData {
   return {
     vendorName: toStringOrNull(fields.vendorName),
@@ -134,6 +135,7 @@ function buildExtractedData(
     receiptTime: toStringOrNull(fields.receiptTime),
     rawText: rawText.slice(0, 4000), // raised from 2000 so a combined two-pass preview isn't cut off mid-Pass-A
     pageNumber,
+    extractionWarning,
   };
 }
 
@@ -256,6 +258,15 @@ ${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs ro
           // mid-object (e.g. stopping mid-string on a field like "balance") and failing JSON.parse
           // below. 4096 comfortably covers the ~19-field schema repeated across several documents.
           max_tokens: 4096,
+          // Caps how much of max_tokens a reasoning-capable model can spend on invisible
+          // "thinking" before it has to start writing the actual answer — without this, a long or
+          // noisy OCR text (real multi-pass text, not a clean synthetic prompt) was observed
+          // pushing some models to spend the *entire* budget reasoning and emit zero output
+          // (finish_reason "length" with empty content), not just a truncated one. "low" is the
+          // safest universal setting: {enabled:false} outright 400s on gpt-oss-20b ("Reasoning is
+          // mandatory for this endpoint"), but every model tried accepts "low" and still answers
+          // correctly — confirmed directly against the OpenRouter API, not assumed.
+          reasoning: { effort: "low" },
         }),
         signal: controller.signal,
         cache: "no-store",
@@ -783,9 +794,19 @@ export async function POST(req: NextRequest) {
           useVisionAssist ? { apiKey, model: visionModel } : null
         );
         if (!rawText.trim()) continue;
-        const receipts = await extractReceiptsWithFallback(rawText, apiKey, modelChain, deadline);
-        for (const fields of receipts) {
-          results.push(buildExtractedData(fields, rawText, pageNumber));
+        // Tesseract already did the hard part for free — if every model in the fallback chain is
+        // rate-limited/overloaded/misbehaving, that shouldn't throw away OCR text that's already
+        // sitting right here. Fall back to a single result with the raw text and every structured
+        // field null (still editable by hand in the UI, and still classifiable afterward) instead
+        // of failing the whole page — flagged with extractionWarning so the client can tell the
+        // difference from a normal successful extraction.
+        try {
+          const receipts = await extractReceiptsWithFallback(rawText, apiKey, modelChain, deadline);
+          for (const fields of receipts) {
+            results.push(buildExtractedData(fields, rawText, pageNumber));
+          }
+        } catch (err: any) {
+          results.push(buildExtractedData({}, rawText, pageNumber, err.message));
         }
       }
     } finally {
