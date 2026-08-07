@@ -6,6 +6,7 @@ import fs from "fs";
 import os from "os";
 import { pathToFileURL } from "url";
 import type { OcrExtractedData } from "@/lib/types";
+import { getModelChain } from "@/lib/models";
 
 // Must be under the OS temp dir, not process.cwd() — on Vercel (and most serverless hosts) the
 // deployment bundle is read-only and only /tmp is writable. Writing under cwd instead throws
@@ -59,6 +60,11 @@ const OCR_TIMEOUT_MS = 18_000;
 // Reserved for the field-extraction LLM call so a slow/weak-confidence OCR pass can never eat the
 // entire request budget and leave nothing for it — see the canAffordSecondPass check below.
 const LLM_MIN_MS = 8_000;
+
+// Floor per model attempt inside extractReceiptsWithFallback's even split (see its doc comment) —
+// lower than LLM_MIN_MS since this bounds one of potentially several attempts sharing the same
+// LLM_MIN_MS-sized window, not the only one.
+const MODEL_ATTEMPT_MIN_MS = 6_000;
 
 // Ceiling on createWorker() itself (spawning the worker thread, loading the core WASM engine and
 // language data) — see the comment at its call site for why this matters.
@@ -243,6 +249,13 @@ ${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs ro
           model,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.1,
+          // Without this, the provider's own default completion budget applies — and for a
+          // reasoning model like gpt-oss-20b, internal reasoning tokens are drawn from that same
+          // budget before any output text is produced. That left too little room for the actual
+          // JSON on pages with several line items or multiple receipts, cutting the response off
+          // mid-object (e.g. stopping mid-string on a field like "balance") and failing JSON.parse
+          // below. 4096 comfortably covers the ~19-field schema repeated across several documents.
+          max_tokens: 4096,
         }),
         signal: controller.signal,
         cache: "no-store",
@@ -278,6 +291,15 @@ ${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs ro
       try {
         parsed = JSON.parse(cleaned);
       } catch {
+        // finish_reason "length" means the model hit max_tokens before finishing — the JSON is
+        // genuinely incomplete (cut off mid-object/mid-string), not malformed by the model itself.
+        // That's a distinct, actionable failure from any other parse error, so it gets its own
+        // message instead of the generic one below dumping a truncated JSON fragment at the user.
+        if (choice?.finish_reason === "length") {
+          throw new Error(
+            `The AI model (${model}) ran out of output space before finishing its response, so the JSON was cut off mid-document. This tends to happen on pages with many line items or several receipts at once. Try again, or switch OPENROUTER_MODEL in .env.local to a model with a larger output limit: openrouter.ai/models?max_price=0`
+          );
+        }
         throw new Error(`Model response could not be parsed (invalid JSON): ${content.slice(0, 300)}`);
       }
       const list = Array.isArray(parsed) ? parsed : [parsed];
@@ -310,6 +332,45 @@ ${rawText.slice(0, 10000) /* raised from 6000 — combined two-pass text runs ro
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/**
+ * Tries extractReceipts against each model in modelChain in turn, stopping at the first one that
+ * succeeds. A free model being rate-limited or overloaded is a routine failure mode (observed
+ * directly: a 429 "temporarily rate-limited upstream" from the default model) rather than a rare
+ * edge case, so giving up after a single model wastes an OCR pass whose text was already fine.
+ *
+ * Each attempt's timeout is the remaining budget split evenly across the models not yet tried,
+ * not the full OPENROUTER_TIMEOUT_MS ceiling — letting the first attempt claim nearly the whole
+ * deadline (as a flat per-attempt ceiling would) leaves no time for any fallback at all when that
+ * first model is merely slow rather than failing fast, which defeats the point of having a chain.
+ * Stops early once even a fair share can't clear MODEL_ATTEMPT_MIN_MS, and surfaces one
+ * aggregated friendly error only if every attempted model failed.
+ */
+async function extractReceiptsWithFallback(
+  rawText: string,
+  apiKey: string,
+  modelChain: string[],
+  deadline: number
+): Promise<Record<string, unknown>[]> {
+  let lastError: Error | null = null;
+  for (let i = 0; i < modelChain.length; i++) {
+    const remaining = deadline - Date.now();
+    if (remaining < MODEL_ATTEMPT_MIN_MS) break;
+    const modelsLeft = modelChain.length - i;
+    const timeoutMs = Math.max(
+      MODEL_ATTEMPT_MIN_MS,
+      Math.min(OPENROUTER_TIMEOUT_MS, Math.floor(remaining / modelsLeft))
+    );
+    try {
+      return await extractReceipts(rawText, apiKey, modelChain[i], timeoutMs);
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+  throw new Error(
+    `All free AI models are currently rate-limited or unavailable — you've hit today's free-tier usage across every fallback model (last error: ${lastError?.message || "unknown"}). Try again in a few minutes, or add your own OpenRouter API key for higher limits: https://openrouter.ai/keys`
+  );
 }
 
 // Full-resolution photos/screenshots (easily 3000px+ on a side) make Tesseract dramatically
@@ -495,6 +556,10 @@ async function visionTranscribe(
             },
           ],
           temperature: 0.1,
+          // Same reasoning-budget issue as extractReceipts's max_tokens — a dense receipt/statement
+          // image can produce a long verbatim transcription, and without this the provider default
+          // could truncate it before the field-extraction call ever sees the missing lines.
+          max_tokens: 2048,
         }),
         signal: controller.signal,
         cache: "no-store",
@@ -625,7 +690,7 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
-    const model = process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
+    const modelChain = getModelChain();
     const visionModel = process.env.OPENROUTER_VISION_MODEL || DEFAULT_VISION_MODEL;
     // Form fields always arrive as strings — "true"/"false", not a real boolean.
     const useVisionAssist = formData.get("useVisionAssist") === "true";
@@ -718,8 +783,7 @@ export async function POST(req: NextRequest) {
           useVisionAssist ? { apiKey, model: visionModel } : null
         );
         if (!rawText.trim()) continue;
-        const llmTimeoutMs = Math.max(LLM_MIN_MS, Math.min(OPENROUTER_TIMEOUT_MS, deadline - Date.now()));
-        const receipts = await extractReceipts(rawText, apiKey, model, llmTimeoutMs);
+        const receipts = await extractReceiptsWithFallback(rawText, apiKey, modelChain, deadline);
         for (const fields of receipts) {
           results.push(buildExtractedData(fields, rawText, pageNumber));
         }

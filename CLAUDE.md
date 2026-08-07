@@ -93,7 +93,14 @@ app/page.tsx ("use client")
   `AbortController` timeout (`OPENROUTER_TIMEOUT_MS`) — the free model's response time is highly
   variable in practice (single-digit seconds to 40+ seconds for the same prompt), and without this
   Vercel's own `maxDuration` kill produces a bare HTML 504 instead of our JSON error format;
-  aborting first turns a slow model into a normal, friendly error. `createWorker()` itself and
+  aborting first turns a slow model into a normal, friendly error. The extraction call also sets
+  `max_tokens` explicitly (`gpt-oss-20b` is a reasoning model, and without this its internal
+  reasoning tokens draw from whatever small default budget the provider applies before any output
+  text is produced — observed directly cutting the JSON response off mid-object) and retries
+  through `getModelChain()`'s fallback list (`extractReceiptsWithFallback`, see `lib/models.ts`)
+  on any failure — a free model returning a 429 rate-limit is routine, not an edge case, so one
+  blocked model no longer fails the whole page; only exhausting every model in the chain does.
+  `createWorker()` itself and
   every individual OCR pass are *also* raced against their own timeouts
   (`WORKER_STARTUP_TIMEOUT_MS`, `OCR_TIMEOUT_MS`) against a single overall `deadline` computed at
   the top of the handler (before any parsing/rasterization/worker-startup work, all of which counts
@@ -113,7 +120,10 @@ app/page.tsx ("use client")
   free) — same `AbortController`/`OPENROUTER_TIMEOUT_MS` pattern as `/api/ocr` — to return raw
   JSON (```json fences stripped before `JSON.parse`) constrained to one of the
   given categories. Falls back to `DEFAULT_CATEGORIES` (`lib/categories.ts`) if `categories` is
-  omitted or empty — that list is no longer hardcoded in this route. **Opt-in vision assist**: if
+  omitted or empty — that list is no longer hardcoded in this route. Text-only classification
+  retries through the same `getModelChain()` fallback list as `/api/ocr` (`classifyWithFallback`)
+  against an overall `REQUEST_DEADLINE_MS` budget, so a rate-limited/overloaded primary model
+  doesn't fail the request outright. **Opt-in vision assist**: if
   the request body has `useVisionAssist: true` **and** a non-empty `imageDataUrl` (a base64 data
   URL, built client-side from the row's `File` via `FileReader` — see `fileToDataURL` in
   `app/page.tsx`), the prompt's `content` becomes a multimodal array (`text` + `image_url`) sent to
@@ -125,6 +135,12 @@ app/page.tsx ("use client")
 - **`lib/types.ts`**: the only cross-cutting module — `RowStatus`, `OcrExtractedData`,
   `ClassifyResult` are shared between both API routes and `app/page.tsx`. Change a field shape
   here first if extending the pipeline.
+- **`lib/models.ts`**: `getModelChain()` — builds the ordered list of free text models `/api/ocr`
+  and `/api/classify` fall back through (primary `OPENROUTER_MODEL` first, then
+  `OPENROUTER_FALLBACK_MODELS` if set, else a hardcoded default chain pulled from
+  https://openrouter.ai/models?max_price=0 — re-check that list before trusting any entry is still
+  free/available). Vision-capable models are handled separately (`OPENROUTER_VISION_MODEL`) since
+  this chain is text-only.
 - **`lib/categories.ts`**: `DEFAULT_CATEGORIES` (seed list) and `CATEGORIES_STORAGE_KEY` (the
   `localStorage` key the client persists its editable category list under) — shared between
   `app/page.tsx` and `/api/classify`.
