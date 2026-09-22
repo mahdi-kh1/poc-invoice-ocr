@@ -19,9 +19,14 @@ export function DemoStatus() {
           No auth. No persistence — nothing you upload is saved once you close the tab. No billing.
           Just the extraction and categorisation engine, on its own.
         </p>
-        <Link href="/" className="vision-btn vision-btn-primary">
-          Try the live demo <IconArrowRight />
-        </Link>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href="/" className="vision-btn vision-btn-primary">
+            Try the live OCR demo <IconArrowRight />
+          </Link>
+          <Link href="/preview" className="vision-btn vision-btn-secondary">
+            Click through all 27 product pages <IconArrowRight />
+          </Link>
+        </div>
       </Reveal>
     </section>
   );

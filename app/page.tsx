@@ -580,6 +580,14 @@ export default function Home() {
         <button className="btn" onClick={() => setHelpOpen(true)}>
           Help
         </button>
+        <a
+          className="btn about-cta"
+          href="/preview"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Full App Preview (27 pages) ↗
+        </a>
       </div>
 
       <h2 className="visually-hidden">Invoice processing results</h2>
