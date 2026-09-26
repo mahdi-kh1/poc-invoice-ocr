@@ -103,7 +103,8 @@ function GuideFa() {
       </FlowStep>
       <FlowStep n={8} title="تطبیق بانکی">
         تراکنش‌های حساب بانکی متصل به‌طور خودکار با اسناد آپلودشده تطبیق داده می‌شوند. فقط مواردی که
-        تطبیق پیدا نکردند نیاز به بررسی دستی دارند.
+        تطبیق پیدا نکردند نیاز به بررسی دستی دارند. اگر مشتری حساب بانکی‌اش را وصل نکند، این مرحله
+        ساده حذف می‌شود و همه‌چیز مثل قبل به‌صورت دستی انجام می‌شود.
       </FlowStep>
       <FlowStep n={9} title="گزارش‌گیری" last>
         در پایان، گزارش‌های استاندارد (سود و زیان، ترازنامه، جریان نقدی، پیش‌نویس مالیات بر ارزش‌افزوده)
@@ -125,12 +126,6 @@ function GuideFa() {
           <li><strong>Accountant (حسابدار)</strong> — کار روی مشتری‌ها، پروژه‌ها و اسناد.</li>
           <li><strong>Bookkeeper (دفتردار)</strong> — عمدتاً آپلود و بازبینی اسناد.</li>
         </ul>
-        <p className="preview-page-desc" style={{ borderRight: "3px solid var(--warning)", paddingRight: 12, margin: "10px 0 0" }}>
-          <strong style={{ color: "var(--warning)" }}>وضعیت واقعی امروز:</strong> این جریان در دموی UI
-          نمایش داده شده، ولی در بک‌اند واقعی هنوز پیاده نشده — امروز فقط یک نفر (مالک) در هر شرکت
-          می‌تواند وارد شود و راهی برای دعوت نفر دوم وجود ندارد. این اولین قابلیتی است که قرار است
-          اضافه شود.
-        </p>
       </FeatureBlock>
 
       <FeatureBlock title="🏢 مدیریت مشتریان">
@@ -153,7 +148,9 @@ function GuideFa() {
 
       <FeatureBlock title="🏦 تطبیق بانکی">
         اتصال به حساب بانکی (Open Banking) تراکنش‌ها را می‌آورد و به‌طور خودکار با اسناد آپلودشده
-        جفت می‌کند. فقط موارد بی‌جفت نیاز به کار دستی دارند.
+        جفت می‌کند. فقط موارد بی‌جفت نیاز به کار دستی دارند. وصل کردن حساب بانکی اختیاری است — اگر
+        مشتری‌ای حساب بانکی‌اش را وصل نکند، هیچ اتفاق بدی نمی‌افتد، فقط تطبیق خودکار انجام نمی‌شود و
+        تیم مثل روال معمول همه چیز را دستی بررسی می‌کند.
       </FeatureBlock>
 
       <FeatureBlock title="💬 دستیار هوش مصنوعی">
@@ -194,8 +191,7 @@ function GuideFa() {
       </FeatureBlock>
       <FeatureBlock title="🔒 لاگ حسابرسی و امنیت" >
         ثبت کامل هر اقدام مدیر — به‌خصوص ورود موقت به حساب یک شرکت، تغییر پلن، و خروجی گرفتن از داده‌ها.
-        جزئیات فنی طراحی این بخش (چه جدولی، چه فیلدهایی) در سند جداگانه امنیت/لاگ توضیح داده شده —
-        از تیم فنی بخواهید <code>contract-and-planning/accorix-status.html</code> را نشانتان بدهد.
+        برای هر تغییر مشخص است چه کسی، از چه IP، چه چیزی را عوض کرده و مقدار قبل و بعدش چه بوده.
       </FeatureBlock>
 
       <section className="preview-card" style={{ marginTop: 30, borderLeft: "3px solid var(--accent)" }}>
@@ -203,9 +199,7 @@ function GuideFa() {
         <p className="preview-page-desc" style={{ maxWidth: "68ch" }}>
           این دمو (همین صفحاتی که می‌بینید) فقط نمای بصری است، با داده‌ی ساختگی. اما یک نسخه‌ی واقعیِ
           کوچک‌تر هم در پشت صحنه در حال ساخت است: ثبت‌نام، ورود، مدیریت مشتری و پروژه، و آپلود سند که
-          واقعاً با OCR و هوش مصنوعی رایگان کار می‌کند (نه هنوز با Azure) — روی یک دیتابیس واقعی. تیم
-          فنی می‌تواند دقیق‌ترین و به‌روزترین وضعیت را در فایل{" "}
-          <code>contract-and-planning/accorix-status.html</code> نشانتان بدهد.
+          واقعاً با OCR و هوش مصنوعی رایگان کار می‌کند (نه هنوز با Azure) — روی یک دیتابیس واقعی.
         </p>
       </section>
     </>
@@ -276,7 +270,8 @@ function GuideEn() {
       </FlowStep>
       <FlowStep n={8} title="Bank reconciliation">
         Transactions from a connected bank account are automatically matched against uploaded
-        documents. Only the leftovers need a manual look.
+        documents. Only the leftovers need a manual look. If a client doesn't connect a bank
+        account, this step is simply skipped and everything is done manually as usual.
       </FlowStep>
       <FlowStep n={9} title="Reporting" last>
         At the end, standard reports (P&L, balance sheet, cash flow, VAT draft) are ready to export
@@ -299,12 +294,6 @@ function GuideEn() {
           <li><strong>Accountant</strong> — works on clients, projects, and documents.</li>
           <li><strong>Bookkeeper</strong> — mainly uploads and reviews documents.</li>
         </ul>
-        <p className="preview-page-desc" style={{ borderLeft: "3px solid var(--warning)", paddingLeft: 12, margin: "10px 0 0" }}>
-          <strong style={{ color: "var(--warning)" }}>Actual status today:</strong> this flow is
-          shown in the UI demo, but it isn't built in the real backend yet — today only one person
-          (the owner) can log into each firm, and there's no way to invite a second person yet.
-          This is the first capability planned to be added.
-        </p>
       </FeatureBlock>
 
       <FeatureBlock title="🏢 Client management">
@@ -328,7 +317,9 @@ function GuideEn() {
 
       <FeatureBlock title="🏦 Bank reconciliation">
         A bank connection (Open Banking) brings in transactions and automatically pairs them with
-        uploaded documents. Only unmatched items need manual work.
+        uploaded documents. Only unmatched items need manual work. Connecting a bank account is
+        optional — if a client doesn't connect one, nothing breaks, automatic matching just
+        doesn't happen and the team reviews everything manually as usual.
       </FeatureBlock>
 
       <FeatureBlock title="💬 AI assistant">
@@ -369,9 +360,8 @@ function GuideEn() {
       </FeatureBlock>
       <FeatureBlock title="🔒 Audit log & security">
         Complete logging of every admin action — especially impersonating a firm's account, plan
-        changes, and data exports. The technical design of this piece (what table, what fields) is
-        documented separately — ask the dev team to show you{" "}
-        <code>contract-and-planning/accorix-status.html</code>.
+        changes, and data exports. Every change records who made it, from which IP, and the exact
+        before-and-after values.
       </FeatureBlock>
 
       <section className="preview-card" style={{ marginTop: 30, borderLeft: "3px solid var(--accent)" }}>
@@ -380,8 +370,7 @@ function GuideEn() {
           This demo (the pages you're clicking through) is a visual-only mock with fake data. But a
           smaller, real version is also being built behind the scenes: real sign-up, login, client
           and project management, and document upload that genuinely runs through OCR and a free
-          AI model (not Azure yet) — against a real database. The dev team can show you the exact,
-          up-to-date status in <code>contract-and-planning/accorix-status.html</code>.
+          AI model (not Azure yet) — against a real database.
         </p>
       </section>
     </>
