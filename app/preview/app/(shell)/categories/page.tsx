@@ -4,16 +4,18 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { FIRM_CATEGORIES } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function FirmCategoriesPage() {
+  const { t } = useT();
   const [categories, setCategories] = useState(FIRM_CATEGORIES);
   const [draft, setDraft] = useState("");
 
   return (
     <>
       <PageHeader
-        title="Categories"
-        description="Your firm's category list, seeded from the standard UK chart-of-accounts and mapped to VAT codes. Every correction your team makes sharpens this over time — corrections are never thrown away."
+        title={t("page.categories.title")}
+        description={t("page.categories.desc")}
       />
 
       <div className="preview-card">

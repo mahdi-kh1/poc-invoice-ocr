@@ -6,8 +6,10 @@ import { PageHeader } from "../../../../_components/PageHeader";
 import { Badge } from "../../../../_components/Badge";
 import { CLIENT_STATUS_META, PROJECT_STATUS_META } from "../../../../_components/statusMeta";
 import { CLIENTS, PROJECTS, DOCUMENTS } from "../../../../_lib/mock-data";
+import { useT } from "../../../../_lib/i18n";
 
 export default function ClientProfilePage() {
+  const { t } = useT();
   const params = useParams<{ id: string }>();
   const client = CLIENTS.find((c) => c.id === params.id);
   if (!client) return notFound();
@@ -19,7 +21,7 @@ export default function ClientProfilePage() {
     <>
       <PageHeader
         title={client.name}
-        description={`Client profile — VAT ${client.vatNumber} · Company no. ${client.companyRegNumber}`}
+        description={`${t("page.clientDetail.desc")} — VAT ${client.vatNumber} · Company no. ${client.companyRegNumber}`}
         actions={
           <>
             <Badge tone={CLIENT_STATUS_META[client.status].tone}>{CLIENT_STATUS_META[client.status].label}</Badge>

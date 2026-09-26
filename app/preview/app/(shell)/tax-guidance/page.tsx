@@ -4,20 +4,20 @@ import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { TAX_ALERT_META } from "../../../_components/statusMeta";
 import { TAX_ALERTS, CLIENTS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function TaxGuidancePage() {
+  const { t } = useT();
   return (
     <>
       <PageHeader
-        title="Tax guidance"
-        description="VAT-threshold monitoring, scheme-eligibility checks, deadline reminders, and tax-saving suggestions — all clearly labelled as suggestions an accountant reviews, never as decisions already made."
+        title={t("page.tax.title")}
+        description={t("page.tax.desc")}
       />
 
       <div className="preview-card" style={{ borderLeft: "3px solid var(--accent)" }}>
         <p className="preview-page-desc" style={{ margin: 0 }}>
-          <strong style={{ color: "var(--text)" }}>Human-in-the-loop, always.</strong> Nothing on this
-          page files or finalises anything automatically — every item below is a draft suggestion
-          for your team to review with the client.
+          <strong style={{ color: "var(--text)" }}>{t("page.tax.humanLoop")}</strong> {t("page.tax.humanLoopBody")}
         </p>
       </div>
 

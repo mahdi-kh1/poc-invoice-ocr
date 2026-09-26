@@ -1,20 +1,32 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "../../_lib/i18n";
 import "../../preview.css";
 
-const STEPS = ["Firm details", "Invite your team", "Add first client"];
+const STEPS_EN = ["Firm details", "Invite your team", "Add first client"];
+const STEPS_FA = ["اطلاعات شرکت", "دعوت تیم", "افزودن اولین مشتری"];
 
 export default function OnboardingPage() {
+  const { t, locale, setLocale } = useT();
+  const fa = locale === "fa";
+  const STEPS = fa ? STEPS_FA : STEPS_EN;
   const [step, setStep] = useState(0);
 
   return (
-    <div className="preview-auth-shell">
+    <div className="preview-auth-shell" dir={fa ? "rtl" : "ltr"} data-locale={locale}>
       <div className="preview-auth-card" style={{ width: "min(92vw, 480px)" }}>
-        <img src="/demo-accorix-logo.svg" alt="" className="preview-auth-logo" />
-        <h1 className="preview-auth-title">{STEPS[step]}</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <img src="/demo-accorix-logo.svg" alt="" className="preview-auth-logo" style={{ marginBottom: 0 }} />
+          <button type="button" className="preview-lang-toggle" onClick={() => setLocale(fa ? "en" : "fa")}>
+            {t("lang.toggle")}
+          </button>
+        </div>
+        <h1 className="preview-auth-title" style={{ marginTop: 14 }}>{STEPS[step]}</h1>
         <p className="preview-auth-sub">
-          Step {step + 1} of {STEPS.length} — set up your firm before your first client.
+          {fa
+            ? `مرحله ${step + 1} از ${STEPS.length} — پیش از افزودن اولین مشتری، شرکت خود را راه‌اندازی کنید.`
+            : `Step ${step + 1} of ${STEPS.length} — set up your firm before your first client.`}
         </p>
 
         <div className="preview-onboarding-steps">
@@ -26,11 +38,11 @@ export default function OnboardingPage() {
         {step === 0 && (
           <>
             <div className="preview-field">
-              <label htmlFor="firmName">Firm name</label>
+              <label htmlFor="firmName">{fa ? "نام شرکت" : "Firm name"}</label>
               <input id="firmName" className="preview-input" defaultValue="Whitfield & Co Accountants" />
             </div>
             <div className="preview-field">
-              <label htmlFor="firmSize">Number of clients you manage</label>
+              <label htmlFor="firmSize">{fa ? "تعداد مشتریانی که مدیریت می‌کنید" : "Number of clients you manage"}</label>
               <select id="firmSize" className="preview-select" defaultValue="6-20">
                 <option>1-5</option>
                 <option>6-20</option>
@@ -43,26 +55,31 @@ export default function OnboardingPage() {
 
         {step === 1 && (
           <>
+            <p className="preview-page-desc" style={{ marginBottom: 14 }}>
+              {fa
+                ? "هر عضو تیم یک ایمیل دعوت دریافت می‌کند، روی لینک کلیک می‌کند، رمز عبور می‌سازد و بلافاصله به داشبورد شرکت شما دسترسی پیدا می‌کند — به همان مشتری‌ها و پروژه‌هایی که شما می‌بینید."
+                : "Each team member gets an invite email, clicks the link, sets a password, and immediately has access to your firm's dashboard — the same clients and projects you see."}
+            </p>
             <div className="preview-field">
-              <label htmlFor="inv1">Team member email</label>
+              <label htmlFor="inv1">{fa ? "ایمیل عضو تیم" : "Team member email"}</label>
               <input id="inv1" className="preview-input" defaultValue="priya@whitfieldco.uk" />
             </div>
             <div className="preview-field">
-              <label htmlFor="inv2">Team member email</label>
+              <label htmlFor="inv2">{fa ? "ایمیل عضو تیم" : "Team member email"}</label>
               <input id="inv2" className="preview-input" defaultValue="tom@whitfieldco.uk" />
             </div>
-            <button type="button" className="btn btn-small">+ Add another</button>
+            <button type="button" className="btn btn-small">{fa ? "+ افزودن نفر دیگر" : "+ Add another"}</button>
           </>
         )}
 
         {step === 2 && (
           <>
             <div className="preview-field">
-              <label htmlFor="clientName">Client name</label>
+              <label htmlFor="clientName">{fa ? "نام مشتری" : "Client name"}</label>
               <input id="clientName" className="preview-input" placeholder="Bramble & Sage Cafe Ltd" defaultValue="Bramble & Sage Cafe Ltd" />
             </div>
             <div className="preview-field">
-              <label htmlFor="clientVat">VAT number (optional)</label>
+              <label htmlFor="clientVat">{fa ? "شماره مالیات بر ارزش‌افزوده (اختیاری)" : "VAT number (optional)"}</label>
               <input id="clientVat" className="preview-input" placeholder="GB 245 8891 33" />
             </div>
           </>
@@ -71,16 +88,16 @@ export default function OnboardingPage() {
         <div className="toolbar" style={{ marginTop: 18, marginBottom: 0 }}>
           {step > 0 && (
             <button className="btn" onClick={() => setStep((s) => s - 1)}>
-              Back
+              {fa ? "بازگشت" : "Back"}
             </button>
           )}
           {step < STEPS.length - 1 ? (
             <button className="btn btn-primary" onClick={() => setStep((s) => s + 1)} style={{ flex: 1 }}>
-              Continue
+              {fa ? "ادامه" : "Continue"}
             </button>
           ) : (
             <a href="/preview/app/dashboard" className="btn btn-primary" style={{ flex: 1, textAlign: "center", textDecoration: "none" }}>
-              Finish setup
+              {fa ? "پایان راه‌اندازی" : "Finish setup"}
             </a>
           )}
         </div>

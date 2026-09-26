@@ -4,8 +4,10 @@ import { useMemo, useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge, EmptyState } from "../../../_components/Badge";
 import { GLOBAL_USERS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function GlobalUsersPage() {
+  const { t } = useT();
   const [q, setQ] = useState("");
 
   const rows = useMemo(
@@ -16,8 +18,8 @@ export default function GlobalUsersPage() {
   return (
     <>
       <PageHeader
-        title="Global user management"
-        description="Search any user across the whole platform regardless of firm — view role and MFA status, force logout, reset password, or block a suspicious account."
+        title={t("page.ausers.title")}
+        description={t("page.ausers.desc")}
       />
 
       <div className="preview-filter-bar">

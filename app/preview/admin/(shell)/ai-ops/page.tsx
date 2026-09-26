@@ -4,13 +4,15 @@ import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { AI_MODEL_STATUS_META } from "../../../_components/statusMeta";
 import { AI_MODELS, ADMIN_FIRMS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function AiOpsPage() {
+  const { t } = useT();
   return (
     <>
       <PageHeader
-        title="AI Ops"
-        description="Model registry, prompt versioning, per-model cost/accuracy, and the manual-correction-rate signal that drives model improvement."
+        title={t("page.aiops.title")}
+        description={t("page.aiops.desc")}
       />
 
       <div className="preview-card">

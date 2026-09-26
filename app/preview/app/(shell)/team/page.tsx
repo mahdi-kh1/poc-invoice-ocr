@@ -4,16 +4,18 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { TEAM } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function TeamPage() {
+  const { t } = useT();
   const [inviteOpen, setInviteOpen] = useState(false);
 
   return (
     <>
       <PageHeader
-        title="Team"
-        description="Everyone at your firm who works in Accorix, and how many clients they're assigned to."
-        actions={<button className="btn btn-primary" onClick={() => setInviteOpen(true)}>+ Invite team member</button>}
+        title={t("page.team.title")}
+        description={t("page.team.desc")}
+        actions={<button className="btn btn-primary" onClick={() => setInviteOpen(true)}>{t("action.inviteTeamMember")}</button>}
       />
 
       <div className="table-wrap">

@@ -4,18 +4,20 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { FIRM_CATEGORIES } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 const TEMPLATES = ["Food retail", "Construction", "Restaurant", "Professional services", "Retail (general)"];
 
 export default function AdminCategoriesPage() {
+  const { t } = useT();
   const [tab, setTab] = useState<"defaults" | "templates">("defaults");
 
   return (
     <>
       <PageHeader
-        title="Category management"
-        description="Standard UK default categories mapped to VAT codes, plus industry-specific templates. Versioned, with rollback if a change goes wrong."
-        actions={<button className="btn btn-primary">+ New category</button>}
+        title={t("page.acats.title")}
+        description={t("page.acats.desc")}
+        actions={<button className="btn btn-primary">{t("action.newCategory")}</button>}
       />
 
       <div className="preview-tabs">

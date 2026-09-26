@@ -4,18 +4,20 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { REPORTS, CLIENTS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 const REPORT_TYPES = ["P&L", "Balance Sheet", "Cash Flow", "VAT Draft", "Aged Debtors", "Aged Creditors"] as const;
 
 export default function ReportsPage() {
+  const { t } = useT();
   const [client, setClient] = useState("all");
   const rows = client === "all" ? REPORTS : REPORTS.filter((r) => r.clientName === CLIENTS.find((c) => c.id === client)?.name);
 
   return (
     <>
       <PageHeader
-        title="Reports & exports"
-        description="P&L, balance sheet, cash flow, VAT drafts, aged debtors/creditors — as Excel, PDF, or CSV, or scheduled straight to an inbox."
+        title={t("page.reports.title")}
+        description={t("page.reports.desc")}
       />
 
       <div className="preview-card">

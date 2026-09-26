@@ -5,16 +5,18 @@ import { StatGrid, StatCard } from "../../../_components/StatCard";
 import { Badge } from "../../../_components/Badge";
 import { TICKET_PRIORITY_META } from "../../../_components/statusMeta";
 import { ADMIN_FIRMS, REVENUE_SERIES, TICKETS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function AdminDashboardPage() {
+  const { t } = useT();
   const latest = REVENUE_SERIES[REVENUE_SERIES.length - 1];
   const maxMrr = Math.max(...REVENUE_SERIES.map((r) => r.mrr));
   const activeFirms = ADMIN_FIRMS.filter((f) => f.status === "active").length;
-  const openTickets = TICKETS.filter((t) => t.status !== "resolved");
+  const openTickets = TICKETS.filter((tk) => tk.status !== "resolved");
 
   return (
     <>
-      <PageHeader title="Platform dashboard" description="Live KPIs across every firm on Accorix." />
+      <PageHeader title={t("page.adash.title")} description={t("page.adash.desc")} />
 
       <StatGrid>
         <StatCard label="MRR" value={`£${latest.mrr.toLocaleString()}`} sub={`+£${latest.mrr - REVENUE_SERIES[REVENUE_SERIES.length - 2].mrr} vs last month`} subTone="positive" />

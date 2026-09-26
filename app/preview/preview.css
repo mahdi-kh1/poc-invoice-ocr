@@ -2,6 +2,51 @@
    custom properties from ../globals.css (--bg, --surface, --accent, --accorix-* etc.) — nothing
    here redefines a color, it only adds layout/components globals.css doesn't already have. */
 
+@import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&display=swap");
+
+[data-locale="fa"] {
+  font-family: "Vazirmatn", system-ui, "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+/* RTL polish — `direction: rtl` (set via the `dir` attribute) already flips grid column order,
+   text alignment, and flex layout automatically; these are only the *physical* (left/right,
+   not logical) properties elsewhere in this file that don't flip on their own. */
+[dir="rtl"] .preview-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+[dir="rtl"] .preview-nav-link {
+  border-left: none;
+  border-right: 2px solid transparent;
+}
+[dir="rtl"] .preview-nav-link-active {
+  border-right-color: var(--accent);
+}
+[dir="rtl"] .cell-num {
+  text-align: right;
+}
+[dir="rtl"] .checklist-check,
+[dir="rtl"] .preview-checklist-check {
+  margin-left: 10px;
+  margin-right: 0;
+}
+
+.preview-lang-toggle {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.preview-lang-toggle:hover {
+  background: var(--surface-hover);
+}
+
 .preview-shell {
   display: grid;
   grid-template-columns: 248px 1fr;

@@ -2,72 +2,72 @@ import type { NavGroup } from "../_components/Shell";
 
 export const FIRM_NAV: NavGroup[] = [
   {
-    label: "Overview",
-    items: [{ href: "/preview/app/dashboard", label: "Dashboard" }],
+    labelKey: "nav.overview",
+    items: [{ href: "/preview/app/dashboard", key: "nav.dashboard" }],
   },
   {
-    label: "Clients",
-    items: [{ href: "/preview/app/clients", label: "Clients" }],
+    labelKey: "nav.clients",
+    items: [{ href: "/preview/app/clients", key: "nav.clientsList" }],
   },
   {
-    label: "Documents",
+    labelKey: "nav.documents",
     items: [
-      { href: "/preview/app/documents/upload", label: "Upload documents" },
-      { href: "/preview/app/documents/review", label: "Review queue" },
-      { href: "/preview/app/categories", label: "Categories" },
+      { href: "/preview/app/documents/upload", key: "nav.uploadDocs" },
+      { href: "/preview/app/documents/review", key: "nav.reviewQueue" },
+      { href: "/preview/app/categories", key: "nav.categories" },
     ],
   },
   {
-    label: "Money",
+    labelKey: "nav.money",
     items: [
-      { href: "/preview/app/reconciliation", label: "Bank reconciliation" },
-      { href: "/preview/app/tax-guidance", label: "Tax guidance" },
-      { href: "/preview/app/reports", label: "Reports & exports" },
+      { href: "/preview/app/reconciliation", key: "nav.reconciliation" },
+      { href: "/preview/app/tax-guidance", key: "nav.taxGuidance" },
+      { href: "/preview/app/reports", key: "nav.reports" },
     ],
   },
   {
-    label: "Firm",
+    labelKey: "nav.firm",
     items: [
-      { href: "/preview/app/assistant", label: "AI assistant" },
-      { href: "/preview/app/team", label: "Team" },
-      { href: "/preview/app/settings", label: "Settings" },
+      { href: "/preview/app/assistant", key: "nav.assistant" },
+      { href: "/preview/app/team", key: "nav.team" },
+      { href: "/preview/app/settings", key: "nav.settings" },
     ],
   },
 ];
 
 export const ADMIN_NAV: NavGroup[] = [
   {
-    label: "Overview",
-    items: [{ href: "/preview/admin/dashboard", label: "Dashboard" }],
+    labelKey: "nav.overview",
+    items: [{ href: "/preview/admin/dashboard", key: "nav.dashboard" }],
   },
   {
-    label: "Platform",
+    labelKey: "nav.platform",
     items: [
-      { href: "/preview/admin/firms", label: "Firms" },
-      { href: "/preview/admin/users", label: "Global users" },
-      { href: "/preview/admin/categories", label: "Categories" },
+      { href: "/preview/admin/firms", key: "nav.firms" },
+      { href: "/preview/admin/users", key: "nav.users" },
+      { href: "/preview/admin/categories", key: "nav.categories" },
     ],
   },
   {
-    label: "Product",
+    labelKey: "nav.product",
     items: [
-      { href: "/preview/admin/ai-ops", label: "AI Ops" },
-      { href: "/preview/admin/system-settings", label: "System settings" },
+      { href: "/preview/admin/ai-ops", key: "nav.aiOps" },
+      { href: "/preview/admin/system-settings", key: "nav.systemSettings" },
     ],
   },
   {
-    label: "Business",
+    labelKey: "nav.business",
     items: [
-      { href: "/preview/admin/billing", label: "Billing & subscriptions" },
-      { href: "/preview/admin/analytics", label: "Reports & analytics" },
-      { href: "/preview/admin/helpdesk", label: "Helpdesk" },
+      { href: "/preview/admin/billing", key: "nav.billing" },
+      { href: "/preview/admin/analytics", key: "nav.analytics" },
+      { href: "/preview/admin/helpdesk", key: "nav.helpdesk" },
     ],
   },
   {
-    label: "Security",
+    labelKey: "nav.security",
     items: [
-      { href: "/preview/admin/audit-log", label: "Audit log" },
-      { href: "/preview/admin/roles", label: "Internal roles" },
+      { href: "/preview/admin/audit-log", key: "nav.auditLog" },
+      { href: "/preview/admin/roles", key: "nav.roles" },
     ],
   },
 ];

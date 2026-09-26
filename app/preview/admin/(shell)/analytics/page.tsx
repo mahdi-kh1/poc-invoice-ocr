@@ -3,15 +3,17 @@
 import { PageHeader } from "../../../_components/PageHeader";
 import { StatGrid, StatCard } from "../../../_components/StatCard";
 import { FUNNEL, REVENUE_SERIES, ADMIN_FIRMS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function AnalyticsPage() {
+  const { t } = useT();
   const maxFunnel = FUNNEL[0].count;
   const totalNew = REVENUE_SERIES.reduce((s, r) => s + r.newFirms, 0);
   const totalChurn = REVENUE_SERIES.reduce((s, r) => s + r.churnedFirms, 0);
 
   return (
     <>
-      <PageHeader title="Business reports & analytics" description="Revenue, cohort retention, and the signup → activation → payment funnel." />
+      <PageHeader title={t("page.analytics.title")} description={t("page.analytics.desc")} />
 
       <StatGrid>
         <StatCard label="Firms signed up (6mo)" value={String(totalNew)} />

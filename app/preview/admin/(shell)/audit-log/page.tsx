@@ -4,22 +4,24 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { AUDIT_LOG } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function AuditLogPage() {
+  const { t } = useT();
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const rows = onlyFlagged ? AUDIT_LOG.filter((a) => a.flagged) : AUDIT_LOG;
 
   return (
     <>
       <PageHeader
-        title="Audit log & security"
-        description="Full logging of every admin action, especially impersonation, plan/access changes, and data exports. Automatic alerts for unusual patterns."
+        title={t("page.audit.title")}
+        description={t("page.audit.desc")}
       />
 
       <div className="preview-filter-bar">
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "var(--text-muted)" }}>
           <input type="checkbox" checked={onlyFlagged} onChange={(e) => setOnlyFlagged(e.target.checked)} />
-          Only flagged events
+          {t("page.audit.onlyFlagged")}
         </label>
       </div>
 

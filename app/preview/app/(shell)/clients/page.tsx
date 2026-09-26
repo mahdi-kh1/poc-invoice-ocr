@@ -7,8 +7,10 @@ import { Badge } from "../../../_components/Badge";
 import { CLIENT_STATUS_META } from "../../../_components/statusMeta";
 import { EmptyState } from "../../../_components/Badge";
 import { CLIENTS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function ClientsPage() {
+  const { t } = useT();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
 
@@ -23,9 +25,9 @@ export default function ClientsPage() {
   return (
     <>
       <PageHeader
-        title="Clients"
-        description="Every client your firm manages. Each one has its own profile, team assignment, and project history — no client ever sees another client's data."
-        actions={<button className="btn btn-primary">+ Add client</button>}
+        title={t("page.clients.title")}
+        description={t("page.clients.desc")}
+        actions={<button className="btn btn-primary">{t("action.addClient")}</button>}
       />
 
       <div className="preview-filter-bar">

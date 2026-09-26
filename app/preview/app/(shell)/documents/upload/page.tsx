@@ -4,8 +4,10 @@ import { useState } from "react";
 import { PageHeader } from "../../../../_components/PageHeader";
 import { Badge } from "../../../../_components/Badge";
 import { CLIENTS, DOCUMENTS } from "../../../../_lib/mock-data";
+import { useT } from "../../../../_lib/i18n";
 
 export default function UploadDocumentsPage() {
+  const { t } = useT();
   const [dragging, setDragging] = useState(false);
   const [client, setClient] = useState(CLIENTS[0].id);
   const recent = DOCUMENTS.slice(0, 5);
@@ -13,8 +15,8 @@ export default function UploadDocumentsPage() {
   return (
     <>
       <PageHeader
-        title="Upload documents"
-        description="Drag and drop, or use a client's dedicated forwarding email, or snap a photo on mobile. Handwritten and low-quality scans are a first-class case here, not an edge case."
+        title={t("page.upload.title")}
+        description={t("page.upload.desc")}
       />
 
       <div className="preview-card">

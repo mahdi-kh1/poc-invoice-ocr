@@ -6,8 +6,10 @@ import { PageHeader } from "../../../_components/PageHeader";
 import { Badge, EmptyState } from "../../../_components/Badge";
 import { FIRM_STATUS_META } from "../../../_components/statusMeta";
 import { ADMIN_FIRMS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function AdminFirmsPage() {
+  const { t } = useT();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
 
@@ -24,8 +26,8 @@ export default function AdminFirmsPage() {
   return (
     <>
       <PageHeader
-        title="Firms"
-        description="Every firm on the platform — search/filter by status, drill into a firm for usage, staff, and billing history."
+        title={t("page.afirms.title")}
+        description={t("page.afirms.desc")}
       />
 
       <div className="preview-filter-bar">

@@ -3,14 +3,16 @@
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { INTERNAL_ROLES } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function InternalRolesPage() {
+  const { t } = useT();
   return (
     <>
       <PageHeader
-        title="Internal roles (RBAC)"
-        description="Custom internal roles with precise, per-role permission assignment, independent of firm-side roles."
-        actions={<button className="btn btn-primary">+ New role</button>}
+        title={t("page.roles.title")}
+        description={t("page.roles.desc")}
+        actions={<button className="btn btn-primary">{t("action.newRole")}</button>}
       />
 
       <div className="preview-card-grid">

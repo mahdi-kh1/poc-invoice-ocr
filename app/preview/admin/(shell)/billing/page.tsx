@@ -4,14 +4,16 @@ import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { INVOICE_STATUS_META } from "../../../_components/statusMeta";
 import { BILLING_PLANS, INVOICES } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function BillingPage() {
+  const { t } = useT();
   return (
     <>
       <PageHeader
-        title="Billing & subscriptions"
-        description="Define plans and caps without a redeploy. Invoices, payment status, dunning, discount codes."
-        actions={<button className="btn btn-primary">+ New discount code</button>}
+        title={t("page.billing.title")}
+        description={t("page.billing.desc")}
+        actions={<button className="btn btn-primary">{t("action.newDiscount")}</button>}
       />
 
       <div className="preview-card">

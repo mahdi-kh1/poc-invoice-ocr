@@ -5,12 +5,14 @@ import { PageHeader } from "../../../_components/PageHeader";
 import { Badge, EmptyState } from "../../../_components/Badge";
 import { TICKET_PRIORITY_META, TICKET_STATUS_META } from "../../../_components/statusMeta";
 import { TICKETS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function HelpdeskPage() {
+  const { t } = useT();
   const [status, setStatus] = useState("open");
 
   const rows = useMemo(
-    () => TICKETS.filter((t) => (status === "all" ? true : t.status === status)).sort((a, b) => {
+    () => TICKETS.filter((tk) => (status === "all" ? true : tk.status === status)).sort((a, b) => {
       const order = { urgent: 0, high: 1, normal: 2, low: 3 };
       return order[a.priority] - order[b.priority];
     }),
@@ -20,8 +22,8 @@ export default function HelpdeskPage() {
   return (
     <>
       <PageHeader
-        title="Helpdesk"
-        description="Ticket queue prioritised by plan — higher SLA for higher plans, connected directly to that firm's data and errors for faster diagnosis."
+        title={t("page.helpdesk.title")}
+        description={t("page.helpdesk.desc")}
       />
 
       <div className="preview-tabs">

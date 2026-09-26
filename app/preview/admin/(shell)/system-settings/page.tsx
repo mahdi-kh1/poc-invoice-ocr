@@ -4,15 +4,17 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
 import { TAX_RULES } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function SystemSettingsPage() {
+  const { t } = useT();
   const [tab, setTab] = useState<"tax" | "integrations" | "api">("tax");
 
   return (
     <>
       <PageHeader
-        title="System settings & integrations"
-        description="Editable tax rules engine, Open Banking API keys, and third-party/HMRC integration management."
+        title={t("page.sysset.title")}
+        description={t("page.sysset.desc")}
       />
 
       <div className="preview-tabs">

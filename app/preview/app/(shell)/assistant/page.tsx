@@ -4,10 +4,12 @@ import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { CHAT_HISTORY, CLIENTS } from "../../../_lib/mock-data";
 import type { ChatMessageRecord } from "../../../_lib/types";
+import { useT } from "../../../_lib/i18n";
 
 let idCounter = 100;
 
 export default function AssistantPage() {
+  const { t } = useT();
   const [scope, setScope] = useState("firm");
   const [messages, setMessages] = useState<ChatMessageRecord[]>(CHAT_HISTORY);
   const [draft, setDraft] = useState("");
@@ -32,8 +34,8 @@ export default function AssistantPage() {
   return (
     <>
       <PageHeader
-        title="AI assistant"
-        description="Chat scoped to a firm, a client, or a single project — answers cite the underlying transaction or document, not a generic chatbot bolted on the side."
+        title={t("page.assistant.title")}
+        description={t("page.assistant.desc")}
         actions={
           <select className="preview-select" value={scope} onChange={(e) => setScope(e.target.value)}>
             <option value="firm">Whole firm</option>

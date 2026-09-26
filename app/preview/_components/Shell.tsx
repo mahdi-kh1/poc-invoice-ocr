@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useT } from "../_lib/i18n";
 import "../preview.css";
 
 export interface NavItem {
   href: string;
-  label: string;
+  key: string;
 }
 
 export interface NavGroup {
-  label: string;
+  labelKey: string;
   items: NavItem[];
 }
 
@@ -28,22 +29,23 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { t, locale, setLocale } = useT();
   const brandHref = panel === "firm" ? "/preview/app/dashboard" : "/preview/admin/dashboard";
 
   return (
-    <div className="preview-shell">
+    <div className="preview-shell" dir={locale === "fa" ? "rtl" : "ltr"} data-locale={locale}>
       <aside className="preview-sidebar">
         <Link href={brandHref} className="preview-sidebar-brand">
           <img src="/demo-accorix-logo.svg" alt="" />
           <span className="preview-sidebar-brand-text">
             <strong>Accorix</strong>
-            <span>{panel === "firm" ? "Firm panel" : "Admin panel"}</span>
+            <span>{panel === "firm" ? t("shell.firmPanel") : t("shell.adminPanel")}</span>
           </span>
         </Link>
 
         {navGroups.map((group) => (
-          <nav key={group.label} className="preview-nav-group" aria-label={group.label}>
-            <div className="preview-nav-group-label">{group.label}</div>
+          <nav key={group.labelKey} className="preview-nav-group" aria-label={t(group.labelKey)}>
+            <div className="preview-nav-group-label">{t(group.labelKey)}</div>
             {group.items.map((item) => {
               const active = pathname === item.href || pathname?.startsWith(item.href + "/");
               return (
@@ -53,7 +55,7 @@ export function Shell({
                   className={`preview-nav-link ${active ? "preview-nav-link-active" : ""}`}
                 >
                   <span className="preview-nav-dot" aria-hidden="true" />
-                  {item.label}
+                  {t(item.key)}
                 </Link>
               );
             })}
@@ -61,16 +63,20 @@ export function Shell({
         ))}
 
         <div className="preview-sidebar-footer">
+          <Link href="/preview/guide" className="preview-nav-link">
+            <span className="preview-nav-dot" aria-hidden="true" />
+            {t("shell.guide")}
+          </Link>
           <Link
             href={panel === "firm" ? "/preview/admin/dashboard" : "/preview/app/dashboard"}
             className="preview-nav-link"
           >
             <span className="preview-nav-dot" aria-hidden="true" />
-            Switch to {panel === "firm" ? "Admin" : "Firm"} panel
+            {panel === "firm" ? t("shell.switchToAdmin") : t("shell.switchToFirm")}
           </Link>
           <Link href="/preview" className="preview-nav-link">
             <span className="preview-nav-dot" aria-hidden="true" />
-            ← Demo hub
+            {t("shell.demoHub")}
           </Link>
         </div>
       </aside>
@@ -79,10 +85,17 @@ export function Shell({
         <header className="preview-topbar">
           <span className="preview-topbar-crumb">
             <strong>{panel === "firm" ? "Whitfield & Co Accountants" : "Accorix — Internal"}</strong>
-            {panel === "firm" ? " · Firm panel" : " · Admin panel"}
+            {panel === "firm" ? ` · ${t("shell.firmPanel")}` : ` · ${t("shell.adminPanel")}`}
           </span>
           <div className="preview-topbar-right">
-            <span className="preview-mock-banner">Mock data — nothing saved</span>
+            <button
+              type="button"
+              className="preview-lang-toggle"
+              onClick={() => setLocale(locale === "fa" ? "en" : "fa")}
+            >
+              {t("lang.toggle")}
+            </button>
+            <span className="preview-mock-banner">{t("shell.mockBanner")}</span>
             <div className="preview-avatar" title={userLabel} aria-hidden="true">
               {userInitials}
             </div>

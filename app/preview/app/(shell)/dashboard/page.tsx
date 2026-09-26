@@ -6,16 +6,18 @@ import { StatGrid, StatCard } from "../../../_components/StatCard";
 import { Badge } from "../../../_components/Badge";
 import { PROJECT_STATUS_META, TAX_ALERT_META } from "../../../_components/statusMeta";
 import { CLIENTS, PROJECTS, TAX_ALERTS, DOCUMENTS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function FirmDashboardPage() {
+  const { t } = useT();
   const upcoming = PROJECTS.filter((p) => p.status !== "done").slice(0, 6);
   const needsReview = DOCUMENTS.filter((d) => d.reviewState === "needs_review").length;
 
   return (
     <>
       <PageHeader
-        title="Good morning, Elena"
-        description="Here's what's moving across Whitfield & Co this week."
+        title={t("page.fdash.title")}
+        description={t("page.fdash.desc")}
       />
 
       <StatGrid>

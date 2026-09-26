@@ -5,19 +5,21 @@ import { PageHeader } from "../../../_components/PageHeader";
 import { Badge, EmptyState } from "../../../_components/Badge";
 import { StatGrid, StatCard } from "../../../_components/StatCard";
 import { BANK_TRANSACTIONS, DOCUMENTS } from "../../../_lib/mock-data";
+import { useT } from "../../../_lib/i18n";
 
 export default function ReconciliationPage() {
+  const { t } = useT();
   const [txns, setTxns] = useState(BANK_TRANSACTIONS);
   const [onlyUnmatched, setOnlyUnmatched] = useState(true);
 
-  const rows = useMemo(() => (onlyUnmatched ? txns.filter((t) => !t.matched) : txns), [txns, onlyUnmatched]);
-  const matchedCount = txns.filter((t) => t.matched).length;
+  const rows = useMemo(() => (onlyUnmatched ? txns.filter((tx) => !tx.matched) : txns), [txns, onlyUnmatched]);
+  const matchedCount = txns.filter((tx) => tx.matched).length;
 
   return (
     <>
       <PageHeader
-        title="Bank reconciliation"
-        description="Connected bank feeds are matched against uploaded documents automatically — what's left over here is what actually needs a human look."
+        title={t("page.recon.title")}
+        description={t("page.recon.desc")}
       />
 
       <StatGrid>
@@ -29,7 +31,7 @@ export default function ReconciliationPage() {
       <div className="preview-filter-bar">
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "var(--text-muted)" }}>
           <input type="checkbox" checked={onlyUnmatched} onChange={(e) => setOnlyUnmatched(e.target.checked)} />
-          Only show unmatched
+          {t("page.recon.onlyUnmatched")}
         </label>
       </div>
 
@@ -42,33 +44,33 @@ export default function ReconciliationPage() {
               <tr><th>Date</th><th>Client</th><th>Description</th><th>Amount</th><th>Status</th><th></th></tr>
             </thead>
             <tbody>
-              {rows.map((t) => (
-                <tr key={t.id}>
-                  <td className="cell-num">{t.date}</td>
-                  <td className="cell-truncate">{t.clientName}</td>
-                  <td className="cell-truncate">{t.description}</td>
-                  <td className="cell-num" style={{ color: t.direction === "in" ? "var(--success)" : "var(--text)" }}>
-                    {t.direction === "in" ? "+" : "-"}£{t.amount.toFixed(2)}
+              {rows.map((tx) => (
+                <tr key={tx.id}>
+                  <td className="cell-num">{tx.date}</td>
+                  <td className="cell-truncate">{tx.clientName}</td>
+                  <td className="cell-truncate">{tx.description}</td>
+                  <td className="cell-num" style={{ color: tx.direction === "in" ? "var(--success)" : "var(--text)" }}>
+                    {tx.direction === "in" ? "+" : "-"}£{tx.amount.toFixed(2)}
                   </td>
                   <td>
-                    {t.matched ? (
-                      <Badge tone="success">Matched — {t.matchedDocument}</Badge>
+                    {tx.matched ? (
+                      <Badge tone="success">Matched — {tx.matchedDocument}</Badge>
                     ) : (
                       <Badge tone="warning">Unmatched</Badge>
                     )}
                   </td>
                   <td className="cell-num">
-                    {!t.matched && (
+                    {!tx.matched && (
                       <select
                         className="preview-select"
                         defaultValue=""
                         onChange={(e) => {
                           if (!e.target.value) return;
-                          setTxns((prev) => prev.map((x) => (x.id === t.id ? { ...x, matched: true, matchedDocument: e.target.value } : x)));
+                          setTxns((prev) => prev.map((x) => (x.id === tx.id ? { ...x, matched: true, matchedDocument: e.target.value } : x)));
                         }}
                       >
                         <option value="" disabled>Match to document…</option>
-                        {DOCUMENTS.filter((d) => d.clientName === t.clientName).map((d) => (
+                        {DOCUMENTS.filter((d) => d.clientName === tx.clientName).map((d) => (
                           <option key={d.id} value={d.fileName}>{d.fileName}</option>
                         ))}
                       </select>

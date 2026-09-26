@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { PageHeader } from "../../../_components/PageHeader";
 import { Badge } from "../../../_components/Badge";
+import { useT } from "../../../_lib/i18n";
 
 export default function FirmSettingsPage() {
+  const { t } = useT();
   const [tab, setTab] = useState<"general" | "billing" | "integrations">("general");
 
   return (
     <>
-      <PageHeader title="Settings" description="Firm profile, billing plan, and connected integrations." />
+      <PageHeader title={t("page.settings.title")} description={t("page.settings.desc")} />
 
       <div className="preview-tabs">
         <button className={`preview-tab ${tab === "general" ? "preview-tab-active" : ""}`} onClick={() => setTab("general")}>General</button>

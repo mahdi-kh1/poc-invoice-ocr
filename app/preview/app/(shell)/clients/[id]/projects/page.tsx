@@ -6,8 +6,10 @@ import { PageHeader } from "../../../../../_components/PageHeader";
 import { Badge, EmptyState } from "../../../../../_components/Badge";
 import { PROJECT_STATUS_META } from "../../../../../_components/statusMeta";
 import { CLIENTS, PROJECTS } from "../../../../../_lib/mock-data";
+import { useT } from "../../../../../_lib/i18n";
 
 export default function ClientProjectsPage() {
+  const { t } = useT();
   const params = useParams<{ id: string }>();
   const client = CLIENTS.find((c) => c.id === params.id);
   if (!client) return notFound();
@@ -17,9 +19,9 @@ export default function ClientProjectsPage() {
   return (
     <>
       <PageHeader
-        title={`Projects — ${client.name}`}
-        description="Every VAT quarter, year-end, and bookkeeping cycle tracked for this client, each moving through its own pipeline."
-        actions={<button className="btn btn-primary">+ New project</button>}
+        title={`${t("common.projects")} — ${client.name}`}
+        description={t("page.clientProjects.desc")}
+        actions={<button className="btn btn-primary">{t("action.newProject")}</button>}
       />
 
       <div className="preview-tabs">

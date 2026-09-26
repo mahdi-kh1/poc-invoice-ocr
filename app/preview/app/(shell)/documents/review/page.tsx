@@ -6,8 +6,10 @@ import { Badge, ConfidenceBar, EmptyState } from "../../../../_components/Badge"
 import { DOC_REVIEW_META } from "../../../../_components/statusMeta";
 import { DOCUMENTS } from "../../../../_lib/mock-data";
 import type { DocumentRecord } from "../../../../_lib/types";
+import { useT } from "../../../../_lib/i18n";
 
 export default function ReviewQueuePage() {
+  const { t } = useT();
   const [filter, setFilter] = useState<"all" | "needs_review">("needs_review");
   const [open, setOpen] = useState<DocumentRecord | null>(null);
 
@@ -19,16 +21,16 @@ export default function ReviewQueuePage() {
   return (
     <>
       <PageHeader
-        title="Review queue"
-        description="Every extracted field carries a confidence score. Low-confidence fields are queued here for a quick human check instead of being silently accepted."
+        title={t("page.review.title")}
+        description={t("page.review.desc")}
       />
 
       <div className="preview-tabs">
         <button className={`preview-tab ${filter === "needs_review" ? "preview-tab-active" : ""}`} onClick={() => setFilter("needs_review")}>
-          Needs review ({DOCUMENTS.filter((d) => d.reviewState === "needs_review").length})
+          {t("page.review.needsReview")} ({DOCUMENTS.filter((d) => d.reviewState === "needs_review").length})
         </button>
         <button className={`preview-tab ${filter === "all" ? "preview-tab-active" : ""}`} onClick={() => setFilter("all")}>
-          All documents ({DOCUMENTS.length})
+          {t("page.review.all")} ({DOCUMENTS.length})
         </button>
       </div>
 
@@ -92,8 +94,8 @@ export default function ReviewQueuePage() {
                   ))}
                 </dl>
                 <div className="toolbar" style={{ marginTop: 16 }}>
-                  <button className="btn btn-primary" onClick={() => setOpen(null)}>Approve</button>
-                  <button className="btn" onClick={() => setOpen(null)}>Save corrections</button>
+                  <button className="btn btn-primary" onClick={() => setOpen(null)}>{t("common.approve")}</button>
+                  <button className="btn" onClick={() => setOpen(null)}>{t("common.save")}</button>
                 </div>
               </div>
             </div>
